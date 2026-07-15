@@ -1,0 +1,78 @@
+{
+  "name": "easymove",
+  "version": "0.1.0",
+  "description": "A romantic multi-pane file manager for Windows and macOS.",
+  "main": "src/main.js",
+  "author": "EasyMove Contributors",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/app.js",
+    "dist:mac": "electron-builder --mac dmg --arm64",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:win-portable": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.easymove.app",
+    "productName": "EasyMove",
+    "artifactName": "EasyMove-${version}-${os}-${arch}.${ext}",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "LICENSE",
+      "README.md",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ],
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "EasyMove ${version}",
+      "backgroundColor": "#f5f1eb",
+      "window": {
+        "width": 600,
+        "height": 420
+      },
+      "contents": [
+        { "x": 170, "y": 205, "type": "file" },
+        { "x": 430, "y": 205, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EasyMove",
+      "installerLanguages": ["zh_CN", "en_US"]
+    }
+  }
+}

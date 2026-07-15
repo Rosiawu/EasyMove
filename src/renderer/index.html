@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+  <title>EasyMove</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-blue-mist">
+  <svg class="svg-symbols" aria-hidden="true">
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-drive" viewBox="0 0 24 24"><path d="M5 4h14l2 6H3l2-6Z"/><path d="M3 10h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8Z"/><path d="M17 15h.01"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11Z"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m4 18 5-5 3 3 2-2 6 5"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 5M20 5v6h-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M5 9V5h4M19 15v4h-4M5 5l6 6M19 19l-6-6"/></symbol>
+    <symbol id="i-cut" viewBox="0 0 24 24"><circle cx="6" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="m8.5 8.5 10 6.5M8.5 15.5 18.5 9"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.9-10.9a2.1 2.1 0 0 0-3-3L5.2 16 4 20Z"/><path d="m14.8 6.4 3 3"/></symbol>
+    <symbol id="i-layout1" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></symbol>
+    <symbol id="i-layout2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+    <symbol id="i-layout4" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18M3 12h18"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-sound" viewBox="0 0 24 24"><path d="M5 10v4h3l4 3V7l-4 3H5Z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.4 7.4 0 0 1 0 10.4"/></symbol>
+    <symbol id="i-bloom" viewBox="0 0 24 24"><g fill="currentColor" fill-opacity=".16" stroke="currentColor" stroke-width="1.1"><ellipse cx="12" cy="6.2" rx="3.1" ry="4.1"/><ellipse cx="16.9" cy="9.8" rx="3.1" ry="4.1" transform="rotate(72 16.9 9.8)"/><ellipse cx="15" cy="15.6" rx="3.1" ry="4.1" transform="rotate(144 15 15.6)"/><ellipse cx="9" cy="15.6" rx="3.1" ry="4.1" transform="rotate(216 9 15.6)"/><ellipse cx="7.1" cy="9.8" rx="3.1" ry="4.1" transform="rotate(288 7.1 9.8)"/></g><circle cx="12" cy="11.7" r="2.2" fill="currentColor" stroke="none"/></symbol>
+  </svg>
+
+  <main class="app-window" id="appWindow">
+    <header class="titlebar">
+      <div class="brand">
+        <span class="brand-mark"><span></span></span>
+        <span class="brand-name">EasyMove <small>0.1</small></span>
+        <svg class="brand-flower"><use href="#i-bloom"/></svg>
+      </div>
+
+      <label class="command-search">
+        <svg><use href="#i-search"/></svg>
+        <input id="globalSearch" placeholder="搜索当前窗格，或输入路径…" autocomplete="off">
+        <span class="shortcut">⌘ / Ctrl K</span>
+      </label>
+
+      <div class="top-actions">
+        <div class="theme-switch" aria-label="水彩主题">
+          <button class="theme-button active" data-theme="theme-blue-mist" title="蓝雾花笺"><svg><use href="#i-bloom"/></svg><span>蓝雾</span></button>
+          <button class="theme-button" data-theme="theme-iris-dream" title="鸢尾梦境"><svg><use href="#i-bloom"/></svg><span>鸢尾</span></button>
+          <button class="theme-button" data-theme="theme-lakeside-journal" title="湖畔手帐"><svg><use href="#i-bloom"/></svg><span>湖畔</span></button>
+        </div>
+
+        <button class="nature-sound-toggle" id="natureSoundToggle" aria-pressed="false" title="开启流水与鸟鸣">
+          <svg><use href="#i-sound"/></svg><span class="nature-label">自然声</span>
+          <span class="sound-waves"><i></i><i></i><i></i></span>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </button>
+
+        <div class="layout-switch" aria-label="窗格布局">
+          <button class="layout-button" data-layout="1" title="单窗格"><svg><use href="#i-layout1"/></svg></button>
+          <button class="layout-button active" data-layout="2" title="双窗格"><svg><use href="#i-layout2"/></svg></button>
+          <button class="layout-button" data-layout="4" title="四窗格"><svg><use href="#i-layout4"/></svg></button>
+        </div>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <aside class="sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-heading">快速访问</div>
+          <nav class="nav-list" id="quickNav"></nav>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-heading">位置</div>
+          <nav class="nav-list" id="volumeNav"></nav>
+        </div>
+        <div class="workspace-card">
+          <strong>四季工作区</strong>
+          <p>每个窗格都保留独立路径。切换布局不会丢失正在整理的位置。</p>
+          <button id="chooseFolderButton">打开其他文件夹</button>
+        </div>
+      </aside>
+
+      <section class="content">
+        <div class="content-toolbar">
+          <div class="toolbar-group">
+            <button class="tool-button primary" data-command="new-folder"><svg><use href="#i-plus"/></svg><span>新建文件夹</span></button>
+            <button class="tool-button" data-command="copy"><svg><use href="#i-copy"/></svg><span>复制</span></button>
+            <button class="tool-button" data-command="cut"><svg><use href="#i-cut"/></svg><span>剪切</span></button>
+            <button class="tool-button" data-command="paste"><svg><use href="#i-copy"/></svg><span>粘贴</span></button>
+            <button class="tool-button" data-command="rename"><svg><use href="#i-edit"/></svg><span>重命名</span></button>
+            <button class="tool-button danger" data-command="trash"><svg><use href="#i-trash"/></svg><span>废纸篓</span></button>
+          </div>
+          <div class="toolbar-group">
+            <span class="selection-copy" id="selectionSummary">未选择文件</span>
+            <button class="tool-button" data-command="copy-other"><svg><use href="#i-copy"/></svg><span>复制到另一窗格</span></button>
+            <button class="tool-button" data-command="move-other"><svg><use href="#i-move"/></svg><span>移动到另一窗格</span></button>
+          </div>
+        </div>
+        <div class="panes layout-2" id="panes"></div>
+      </section>
+    </section>
+
+    <footer class="transfer-bar">
+      <div class="transfer-label"><span class="pulse"></span><strong>传输队列</strong><span id="queueCount">空闲</span></div>
+      <div class="transfer-summary">
+        <div class="transfer-file"><strong id="transferTitle">准备就绪</strong><span id="transferDetail">选择文件后可复制或移动到另一窗格</span></div>
+        <div class="progress"><span id="progressFill"></span></div>
+        <div class="transfer-meta" id="transferMeta">0%</div>
+      </div>
+      <div class="transfer-actions">
+        <button class="icon-button" id="pauseTransfer" title="暂停"><svg><use href="#i-pause"/></svg></button>
+        <button class="icon-button" id="cancelTransfer" title="取消"><svg><use href="#i-close"/></svg></button>
+      </div>
+    </footer>
+
+    <div class="toast" id="toast" role="status"><span class="toast-icon"><svg><use href="#i-check"/></svg></span><div><strong id="toastTitle">EasyMove</strong><p id="toastMessage"></p></div></div>
+
+    <div class="modal-backdrop" id="renameModal" hidden>
+      <form class="rename-dialog" id="renameForm">
+        <svg class="dialog-flower"><use href="#i-bloom"/></svg>
+        <h2>重命名</h2>
+        <p>为选中的文件或文件夹输入新名称。</p>
+        <input id="renameInput" autocomplete="off">
+        <div class="dialog-actions"><button type="button" id="renameCancel">取消</button><button type="submit" class="confirm">确定</button></div>
+      </form>
+    </div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

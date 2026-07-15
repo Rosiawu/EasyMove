@@ -1,0 +1,718 @@
+const api = window.easyMove;
+
+const state = {
+  platform: 'darwin',
+  locations: {},
+  volumes: [],
+  layout: 2,
+  activePane: 0,
+  panes: [],
+  clipboard: null,
+  operation: null,
+  paused: false,
+  toastTimer: null,
+  renameTarget: null
+};
+
+const elements = {
+  panes: document.getElementById('panes'),
+  quickNav: document.getElementById('quickNav'),
+  volumeNav: document.getElementById('volumeNav'),
+  globalSearch: document.getElementById('globalSearch'),
+  selectionSummary: document.getElementById('selectionSummary'),
+  transferBar: document.querySelector('.transfer-bar'),
+  queueCount: document.getElementById('queueCount'),
+  transferTitle: document.getElementById('transferTitle'),
+  transferDetail: document.getElementById('transferDetail'),
+  transferMeta: document.getElementById('transferMeta'),
+  progressFill: document.getElementById('progressFill'),
+  pauseTransfer: document.getElementById('pauseTransfer'),
+  cancelTransfer: document.getElementById('cancelTransfer'),
+  toast: document.getElementById('toast'),
+  toastTitle: document.getElementById('toastTitle'),
+  toastMessage: document.getElementById('toastMessage'),
+  renameModal: document.getElementById('renameModal'),
+  renameForm: document.getElementById('renameForm'),
+  renameInput: document.getElementById('renameInput'),
+  natureSoundToggle: document.getElementById('natureSoundToggle')
+};
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function encodePath(value) {
+  return encodeURIComponent(value);
+}
+
+function decodePath(value) {
+  return decodeURIComponent(value);
+}
+
+function icon(name) {
+  return `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
+}
+
+function showToast(message, title = 'EasyMove') {
+  elements.toastTitle.textContent = title;
+  elements.toastMessage.textContent = message;
+  elements.toast.classList.add('show');
+  clearTimeout(state.toastTimer);
+  state.toastTimer = setTimeout(() => elements.toast.classList.remove('show'), 3000);
+}
+
+function formatSize(bytes) {
+  if (!bytes) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function formatDate(timestamp) {
+  if (!timestamp) return '—';
+  const date = new Date(timestamp);
+  const today = new Date();
+  const sameDay = date.toDateString() === today.toDateString();
+  return sameDay
+    ? `今天 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+    : date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+}
+
+function basename(filePath) {
+  const normalized = filePath.replaceAll('\\', '/').replace(/\/$/, '');
+  return normalized.split('/').pop() || filePath;
+}
+
+function parentPath(filePath) {
+  const separator = state.platform === 'win32' ? '\\' : '/';
+  const normalized = filePath.replace(/[\\/]+$/, '');
+  const index = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
+  if (index <= 0) return state.platform === 'win32' ? normalized.slice(0, 3) : '/';
+  return normalized.slice(0, index) || separator;
+}
+
+function makePane(id, path) {
+  return {
+    id,
+    path,
+    entries: [],
+    selection: new Set(),
+    history: [path],
+    historyIndex: 0,
+    loading: true,
+    error: '',
+    filter: '',
+    showHidden: false,
+    loadToken: 0,
+    anchorPath: null
+  };
+}
+
+async function loadPane(index, targetPath, options = {}) {
+  const pane = state.panes[index];
+  if (!pane) return;
+  const token = pane.loadToken + 1;
+  pane.loadToken = token;
+  pane.loading = true;
+  pane.error = '';
+  pane.selection.clear();
+  renderPanes();
+  try {
+    const result = await api.listDirectory(targetPath, pane.showHidden);
+    if (pane.loadToken !== token) return;
+    pane.path = result.path;
+    pane.entries = result.entries;
+    pane.loading = false;
+    pane.error = '';
+    if (options.pushHistory !== false && pane.history[pane.historyIndex] !== result.path) {
+      pane.history = pane.history.slice(0, pane.historyIndex + 1);
+      pane.history.push(result.path);
+      pane.historyIndex = pane.history.length - 1;
+    }
+    if (index === state.activePane) elements.globalSearch.value = pane.filter;
+    renderAll();
+  } catch (error) {
+    if (pane.loadToken !== token) return;
+    pane.loading = false;
+    pane.error = error.message || String(error);
+    renderPanes();
+    showToast(pane.error, '无法打开文件夹');
+  }
+}
+
+function visiblePaneIndexes() {
+  if (state.layout === 1) return [0];
+  if (state.layout === 2) return [0, 1];
+  return [0, 1, 2, 3];
+}
+
+function activePane() {
+  return state.panes[state.activePane];
+}
+
+function otherPaneIndex() {
+  const visible = visiblePaneIndexes();
+  const currentPosition = visible.indexOf(state.activePane);
+  if (currentPosition < 0) return visible[0];
+  return visible[(currentPosition + 1) % visible.length] ?? 1;
+}
+
+function filteredEntries(pane) {
+  const query = pane.filter.trim().toLocaleLowerCase();
+  if (!query) return pane.entries;
+  return pane.entries.filter((entry) => entry.name.toLocaleLowerCase().includes(query));
+}
+
+function renderPane(pane) {
+  const entries = filteredEntries(pane);
+  const rows = entries.map((entry) => {
+    const selected = pane.selection.has(entry.path) ? ' selected' : '';
+    const cut = state.clipboard?.mode === 'move' && state.clipboard.paths.includes(entry.path) ? ' cut' : '';
+    const fileIcon = entry.isDirectory ? icon('folder') : icon('image');
+    return `<tr class="file-row${selected}${cut}" data-pane="${pane.id}" data-path="${encodePath(entry.path)}">
+      <td><div class="file-name"><span class="file-icon${entry.isDirectory ? '' : ' file'}">${fileIcon}</span><span>${escapeHtml(entry.name)}</span></div></td>
+      <td>${escapeHtml(entry.kind)}</td>
+      <td>${escapeHtml(formatDate(entry.modified))}</td>
+      <td>${entry.isDirectory ? '—' : escapeHtml(formatSize(entry.size))}</td>
+    </tr>`;
+  }).join('');
+
+  let content = `<table class="file-table"><thead><tr><th>名称</th><th>类型</th><th>修改时间</th><th>大小</th></tr></thead><tbody>${rows}</tbody></table>`;
+  if (pane.loading) content = `<div class="empty-state"><div>${icon('refresh')}<br>正在读取文件夹…</div></div>`;
+  else if (pane.error) content = `<div class="empty-state"><div>${icon('close')}<br>${escapeHtml(pane.error)}</div></div>`;
+  else if (!entries.length) content = `<div class="empty-state"><div>${icon('bloom')}<br>${pane.filter ? '没有匹配的文件' : '这个文件夹是空的'}</div></div>`;
+
+  const selectedSize = pane.entries.filter((entry) => pane.selection.has(entry.path) && !entry.isDirectory).reduce((sum, entry) => sum + entry.size, 0);
+  return `<section class="pane${pane.id === state.activePane ? ' active' : ''}" data-pane="${pane.id}">
+    <div class="pane-tabs"><div class="pane-tab">${icon('folder')}<span>${escapeHtml(basename(pane.path) || pane.path)}</span></div></div>
+    <div class="pane-address">
+      <div class="address-buttons">
+        <button class="mini-button" data-pane-action="back" data-pane="${pane.id}" ${pane.historyIndex <= 0 ? 'disabled' : ''} title="后退">${icon('back')}</button>
+        <button class="mini-button" data-pane-action="forward" data-pane="${pane.id}" ${pane.historyIndex >= pane.history.length - 1 ? 'disabled' : ''} title="前进">${icon('next')}</button>
+        <button class="mini-button" data-pane-action="up" data-pane="${pane.id}" title="上一级">${icon('up')}</button>
+      </div>
+      <input class="path-input" data-pane="${pane.id}" value="${escapeHtml(pane.path)}" aria-label="当前路径">
+      <button class="mini-button" data-pane-action="refresh" data-pane="${pane.id}" title="刷新">${icon('refresh')}</button>
+    </div>
+    <div class="file-list">${content}</div>
+    <div class="pane-status"><span>${pane.selection.size ? `已选择 ${pane.selection.size} 项` : `${pane.entries.length} 个项目`}</span><span>${selectedSize ? formatSize(selectedSize) : escapeHtml(pane.path)}</span></div>
+  </section>`;
+}
+
+function renderPanes() {
+  elements.panes.className = `panes layout-${state.layout}`;
+  elements.panes.innerHTML = state.panes.map(renderPane).join('');
+}
+
+function renderSidebar() {
+  const shortcuts = [
+    ['home', '个人文件夹', 'home'],
+    ['desktop', '桌面', 'home'],
+    ['documents', '文稿', 'folder'],
+    ['downloads', '下载', 'download'],
+    ['pictures', '图片', 'image']
+  ];
+  elements.quickNav.innerHTML = shortcuts.map(([key, label, iconName]) => {
+    const target = state.locations[key];
+    const active = activePane()?.path === target ? ' active' : '';
+    return `<button class="nav-item${active}" data-nav-path="${encodePath(target)}">${icon(iconName)}<span>${label}</span><small></small></button>`;
+  }).join('');
+  elements.volumeNav.innerHTML = state.volumes.map((volume) => {
+    const active = activePane()?.path === volume.path ? ' active' : '';
+    return `<button class="nav-item${active}" data-nav-path="${encodePath(volume.path)}">${icon('drive')}<span>${escapeHtml(volume.name)}</span><small></small></button>`;
+  }).join('');
+}
+
+function renderSelectionSummary() {
+  const pane = activePane();
+  if (!pane || !pane.selection.size) {
+    elements.selectionSummary.textContent = '未选择文件';
+    return;
+  }
+  const selectedEntries = pane.entries.filter((entry) => pane.selection.has(entry.path));
+  const size = selectedEntries.filter((entry) => !entry.isDirectory).reduce((sum, entry) => sum + entry.size, 0);
+  elements.selectionSummary.textContent = `已选择 ${pane.selection.size} 项${size ? ` · ${formatSize(size)}` : ''}`;
+}
+
+function renderAll() {
+  renderPanes();
+  renderSidebar();
+  renderSelectionSummary();
+}
+
+function setActivePane(index) {
+  if (!visiblePaneIndexes().includes(index)) return;
+  state.activePane = index;
+  elements.globalSearch.value = activePane().filter;
+  renderAll();
+}
+
+function selectRow(paneIndex, path, event) {
+  const pane = state.panes[paneIndex];
+  const entries = filteredEntries(pane);
+  if (event.shiftKey && pane.anchorPath) {
+    const start = entries.findIndex((entry) => entry.path === pane.anchorPath);
+    const end = entries.findIndex((entry) => entry.path === path);
+    if (start >= 0 && end >= 0) {
+      pane.selection.clear();
+      const [from, to] = start < end ? [start, end] : [end, start];
+      entries.slice(from, to + 1).forEach((entry) => pane.selection.add(entry.path));
+    }
+  } else if (event.metaKey || event.ctrlKey) {
+    if (pane.selection.has(path)) pane.selection.delete(path);
+    else pane.selection.add(path);
+    pane.anchorPath = path;
+  } else {
+    pane.selection.clear();
+    pane.selection.add(path);
+    pane.anchorPath = path;
+  }
+  state.activePane = paneIndex;
+  renderAll();
+}
+
+function selectedPaths() {
+  return Array.from(activePane()?.selection || []);
+}
+
+function copySelection(mode) {
+  const paths = selectedPaths();
+  if (!paths.length) return showToast('请先选择文件或文件夹');
+  state.clipboard = { paths, mode };
+  renderPanes();
+  showToast(`${paths.length} 项已${mode === 'move' ? '剪切' : '复制'}，请选择目标窗格后粘贴`);
+}
+
+async function startTransfer(paths, targetDirectory, mode) {
+  if (!paths.length) return showToast('没有可传输的文件');
+  if (state.operation) return showToast('当前已有传输任务，请等待完成');
+  try {
+    const result = await api.transfer(paths, targetDirectory, mode);
+    state.operation = { id: result.id, mode, paths, targetDirectory };
+    state.paused = false;
+    elements.transferBar.classList.add('busy');
+    elements.queueCount.textContent = '1 项';
+    elements.transferTitle.textContent = mode === 'move' ? '正在移动文件' : '正在复制文件';
+    elements.transferDetail.textContent = `${paths.length} 项 → ${targetDirectory}`;
+    elements.pauseTransfer.disabled = false;
+    elements.cancelTransfer.disabled = false;
+  } catch (error) {
+    showToast(error.message || String(error), '无法开始传输');
+  }
+}
+
+async function pasteClipboard() {
+  if (!state.clipboard?.paths.length) return showToast('剪贴板中没有 EasyMove 文件');
+  await startTransfer(state.clipboard.paths, activePane().path, state.clipboard.mode);
+}
+
+async function transferToOther(mode) {
+  const paths = selectedPaths();
+  if (!paths.length) return showToast('请先选择要传输的文件');
+  const target = state.panes[otherPaneIndex()];
+  await startTransfer(paths, target.path, mode);
+}
+
+async function createFolder() {
+  try {
+    const created = await api.createFolder(activePane().path);
+    await loadPane(state.activePane, activePane().path, { pushHistory: false });
+    activePane().selection.add(created);
+    renderAll();
+    showToast('新文件夹已创建');
+  } catch (error) {
+    showToast(error.message || String(error), '创建失败');
+  }
+}
+
+async function trashSelection() {
+  const paths = selectedPaths();
+  if (!paths.length) return showToast('请先选择要移入废纸篓的文件');
+  try {
+    const result = await api.trash(paths);
+    await loadPane(state.activePane, activePane().path, { pushHistory: false });
+    if (result.success) showToast(`${paths.length} 项已移入${state.platform === 'win32' ? '回收站' : '废纸篓'}`);
+    else showToast(result.errors.join('；'), '部分文件未能删除');
+  } catch (error) {
+    showToast(error.message || String(error), '删除失败');
+  }
+}
+
+function openRenameDialog() {
+  const paths = selectedPaths();
+  if (paths.length !== 1) return showToast('重命名时请选择一个项目');
+  state.renameTarget = paths[0];
+  elements.renameInput.value = basename(paths[0]);
+  elements.renameModal.hidden = false;
+  setTimeout(() => {
+    elements.renameInput.focus();
+    const dot = elements.renameInput.value.lastIndexOf('.');
+    elements.renameInput.setSelectionRange(0, dot > 0 ? dot : elements.renameInput.value.length);
+  }, 30);
+}
+
+function closeRenameDialog() {
+  elements.renameModal.hidden = true;
+  state.renameTarget = null;
+}
+
+async function executeCommand(command) {
+  if (command === 'new-folder') return createFolder();
+  if (command === 'copy') return copySelection('copy');
+  if (command === 'cut') return copySelection('move');
+  if (command === 'paste') return pasteClipboard();
+  if (command === 'rename') return openRenameDialog();
+  if (command === 'trash') return trashSelection();
+  if (command === 'copy-other') return transferToOther('copy');
+  if (command === 'move-other') return transferToOther('move');
+}
+
+elements.panes.addEventListener('mousedown', (event) => {
+  const paneElement = event.target.closest('.pane');
+  if (!paneElement) return;
+  const index = Number(paneElement.dataset.pane);
+  if (index === state.activePane) return;
+  state.activePane = index;
+  elements.globalSearch.value = activePane().filter;
+  elements.panes.querySelectorAll('.pane').forEach((pane) => pane.classList.toggle('active', Number(pane.dataset.pane) === index));
+  renderSidebar();
+  renderSelectionSummary();
+});
+
+elements.panes.addEventListener('click', (event) => {
+  const row = event.target.closest('.file-row');
+  if (row) {
+    selectRow(Number(row.dataset.pane), decodePath(row.dataset.path), event);
+    return;
+  }
+  const action = event.target.closest('[data-pane-action]');
+  if (!action || action.disabled) return;
+  const index = Number(action.dataset.pane);
+  const pane = state.panes[index];
+  if (action.dataset.paneAction === 'back' && pane.historyIndex > 0) {
+    pane.historyIndex -= 1;
+    loadPane(index, pane.history[pane.historyIndex], { pushHistory: false });
+  }
+  if (action.dataset.paneAction === 'forward' && pane.historyIndex < pane.history.length - 1) {
+    pane.historyIndex += 1;
+    loadPane(index, pane.history[pane.historyIndex], { pushHistory: false });
+  }
+  if (action.dataset.paneAction === 'up') loadPane(index, parentPath(pane.path));
+  if (action.dataset.paneAction === 'refresh') loadPane(index, pane.path, { pushHistory: false });
+});
+
+elements.panes.addEventListener('dblclick', async (event) => {
+  const row = event.target.closest('.file-row');
+  if (!row) return;
+  const paneIndex = Number(row.dataset.pane);
+  const filePath = decodePath(row.dataset.path);
+  const entry = state.panes[paneIndex].entries.find((item) => item.path === filePath);
+  if (!entry) return;
+  if (entry.isDirectory) await loadPane(paneIndex, entry.path);
+  else {
+    const error = await api.open(entry.path);
+    if (error) showToast(error, '无法打开文件');
+  }
+});
+
+elements.panes.addEventListener('keydown', (event) => {
+  const input = event.target.closest('.path-input');
+  if (input && event.key === 'Enter') {
+    event.preventDefault();
+    loadPane(Number(input.dataset.pane), input.value.trim());
+  }
+});
+
+document.querySelector('.content-toolbar').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-command]');
+  if (button) executeCommand(button.dataset.command);
+});
+
+document.querySelectorAll('.layout-button').forEach((button) => {
+  button.addEventListener('click', () => {
+    state.layout = Number(button.dataset.layout);
+    if (!visiblePaneIndexes().includes(state.activePane)) state.activePane = 0;
+    document.querySelectorAll('.layout-button').forEach((item) => item.classList.toggle('active', item === button));
+    renderAll();
+    showToast(`已切换为${state.layout === 1 ? '单' : state.layout === 2 ? '双' : '四'}窗格`);
+  });
+});
+
+const themeNames = {
+  'theme-blue-mist': '蓝雾花笺',
+  'theme-iris-dream': '鸢尾梦境',
+  'theme-lakeside-journal': '湖畔手帐'
+};
+
+document.querySelectorAll('.theme-button').forEach((button) => {
+  button.addEventListener('click', () => {
+    Object.keys(themeNames).forEach((theme) => document.body.classList.remove(theme));
+    document.body.classList.add(button.dataset.theme);
+    document.querySelectorAll('.theme-button').forEach((item) => item.classList.toggle('active', item === button));
+    localStorage.setItem('easymove-theme', button.dataset.theme);
+    showToast(`已切换为「${themeNames[button.dataset.theme]}」`);
+  });
+});
+
+elements.quickNav.addEventListener('click', (event) => {
+  const item = event.target.closest('[data-nav-path]');
+  if (item) loadPane(state.activePane, decodePath(item.dataset.navPath));
+});
+elements.volumeNav.addEventListener('click', (event) => {
+  const item = event.target.closest('[data-nav-path]');
+  if (item) loadPane(state.activePane, decodePath(item.dataset.navPath));
+});
+
+document.getElementById('chooseFolderButton').addEventListener('click', async () => {
+  const selected = await api.chooseFolder();
+  if (selected) loadPane(state.activePane, selected);
+});
+
+elements.globalSearch.addEventListener('input', () => {
+  activePane().filter = elements.globalSearch.value;
+  renderPanes();
+});
+elements.globalSearch.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  const value = elements.globalSearch.value.trim();
+  const looksLikePath = value.startsWith('/') || value.startsWith('~') || /^[A-Za-z]:[\\/]/.test(value);
+  if (looksLikePath) {
+    activePane().filter = '';
+    loadPane(state.activePane, value.replace(/^~/, state.locations.home));
+  }
+});
+
+elements.renameForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!state.renameTarget) return;
+  try {
+    await api.rename(state.renameTarget, elements.renameInput.value);
+    closeRenameDialog();
+    await loadPane(state.activePane, activePane().path, { pushHistory: false });
+    showToast('重命名完成');
+  } catch (error) {
+    showToast(error.message || String(error), '重命名失败');
+  }
+});
+document.getElementById('renameCancel').addEventListener('click', closeRenameDialog);
+elements.renameModal.addEventListener('mousedown', (event) => {
+  if (event.target === elements.renameModal) closeRenameDialog();
+});
+
+elements.pauseTransfer.addEventListener('click', async () => {
+  if (!state.operation) return;
+  state.paused = !state.paused;
+  await api.controlOperation(state.operation.id, state.paused ? 'pause' : 'resume');
+  elements.pauseTransfer.innerHTML = state.paused ? icon('play') : icon('pause');
+  elements.transferTitle.textContent = state.paused ? '传输已暂停' : (state.operation.mode === 'move' ? '正在移动文件' : '正在复制文件');
+});
+elements.cancelTransfer.addEventListener('click', async () => {
+  if (state.operation) await api.controlOperation(state.operation.id, 'cancel');
+});
+
+api.onOperationProgress((progress) => {
+  if (!state.operation || state.operation.id !== progress.id) return;
+  const percent = Math.max(0, Math.min(100, Math.round((progress.completed / Math.max(1, progress.total)) * 100)));
+  elements.progressFill.style.width = `${percent}%`;
+  elements.transferMeta.textContent = `${percent}%`;
+  if (progress.currentFile) elements.transferDetail.textContent = progress.currentFile;
+});
+
+api.onOperationComplete(async (result) => {
+  if (!state.operation || state.operation.id !== result.id) return;
+  const operation = state.operation;
+  state.operation = null;
+  state.paused = false;
+  elements.transferBar.classList.remove('busy');
+  elements.queueCount.textContent = '空闲';
+  elements.pauseTransfer.innerHTML = icon('pause');
+  elements.pauseTransfer.disabled = true;
+  elements.cancelTransfer.disabled = true;
+  elements.progressFill.style.width = result.success ? '100%' : '0%';
+  elements.transferMeta.textContent = result.success ? '完成' : (result.cancelled ? '已取消' : '失败');
+  elements.transferTitle.textContent = result.success ? '传输完成' : (result.cancelled ? '传输已取消' : '部分文件失败');
+  elements.transferDetail.textContent = result.errors?.join('；') || `${operation.paths.length} 项已处理`;
+  if (operation.mode === 'move') state.clipboard = null;
+  await Promise.all(state.panes.map((pane, index) => loadPane(index, pane.path, { pushHistory: false })));
+  showToast(result.success ? '文件传输已完成' : (result.cancelled ? '传输已取消' : elements.transferDetail.textContent), result.success ? '完成' : 'EasyMove');
+});
+
+document.addEventListener('keydown', (event) => {
+  const modifier = event.metaKey || event.ctrlKey;
+  const editing = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
+  if (modifier && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    elements.globalSearch.focus();
+    elements.globalSearch.select();
+    return;
+  }
+  if (editing) {
+    if (event.key === 'Escape') closeRenameDialog();
+    return;
+  }
+  if (modifier && event.key.toLowerCase() === 'c') { event.preventDefault(); copySelection('copy'); }
+  if (modifier && event.key.toLowerCase() === 'x') { event.preventDefault(); copySelection('move'); }
+  if (modifier && event.key.toLowerCase() === 'v') { event.preventDefault(); pasteClipboard(); }
+  if (modifier && event.key.toLowerCase() === 'a') {
+    event.preventDefault();
+    activePane().entries.forEach((entry) => activePane().selection.add(entry.path));
+    renderAll();
+  }
+  if (event.key === 'F2') { event.preventDefault(); openRenameDialog(); }
+  if (event.key === 'Delete') { event.preventDefault(); trashSelection(); }
+  if (event.key === 'Escape') closeRenameDialog();
+});
+
+let natureSound = null;
+let birdTimer = null;
+
+function createWaterNoise(ctx) {
+  const length = ctx.sampleRate * 5;
+  const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+    const data = buffer.getChannelData(channel);
+    let last = 0;
+    for (let index = 0; index < length; index += 1) {
+      const white = Math.random() * 2 - 1;
+      last = (last + white * .025) / 1.025;
+      data[index] = Math.max(-1, Math.min(1, last * 3.2 + white * .07));
+    }
+  }
+  return buffer;
+}
+
+function addWaterLayer(ctx, buffer, master, type, frequency, volume) {
+  const source = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  source.buffer = buffer;
+  source.loop = true;
+  filter.type = type;
+  filter.frequency.value = frequency;
+  filter.Q.value = .55;
+  gain.gain.value = volume;
+  source.connect(filter).connect(gain).connect(master);
+  source.start();
+  return gain;
+}
+
+function playBird(engine) {
+  if (natureSound !== engine || engine.ctx.state === 'closed') return;
+  const start = engine.ctx.currentTime + .04;
+  const base = 1500 + Math.random() * 720;
+  const panner = engine.ctx.createStereoPanner ? engine.ctx.createStereoPanner() : engine.ctx.createGain();
+  if ('pan' in panner) panner.pan.value = Math.random() * 1.4 - .7;
+  panner.connect(engine.master);
+  [0, .15, .31].forEach((offset, index) => {
+    const oscillator = engine.ctx.createOscillator();
+    const gain = engine.ctx.createGain();
+    const note = start + offset;
+    oscillator.type = index === 1 ? 'triangle' : 'sine';
+    oscillator.frequency.setValueAtTime(base * (1 + index * .035), note);
+    oscillator.frequency.exponentialRampToValueAtTime(base * 1.58, note + .075);
+    oscillator.frequency.exponentialRampToValueAtTime(base * 1.12, note + .22);
+    gain.gain.setValueAtTime(.0001, note);
+    gain.gain.exponentialRampToValueAtTime(.05 - index * .007, note + .025);
+    gain.gain.exponentialRampToValueAtTime(.0001, note + .25);
+    oscillator.connect(gain).connect(panner);
+    oscillator.start(note);
+    oscillator.stop(note + .28);
+  });
+}
+
+function scheduleBird(engine, delay = 1500) {
+  clearTimeout(birdTimer);
+  birdTimer = setTimeout(() => {
+    playBird(engine);
+    scheduleBird(engine, 4200 + Math.random() * 6200);
+  }, delay);
+}
+
+async function startNatureSound() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return showToast('当前系统不支持自然声播放');
+  const ctx = new AudioContextClass();
+  const master = ctx.createGain();
+  const compressor = ctx.createDynamicsCompressor();
+  master.gain.value = .42;
+  compressor.threshold.value = -24;
+  compressor.ratio.value = 3;
+  master.connect(compressor).connect(ctx.destination);
+  const noise = createWaterNoise(ctx);
+  const lowWater = addWaterLayer(ctx, noise, master, 'lowpass', 980, .17);
+  addWaterLayer(ctx, noise, master, 'bandpass', 2850, .052);
+  const tide = ctx.createOscillator();
+  const tideDepth = ctx.createGain();
+  tide.frequency.value = .075;
+  tideDepth.gain.value = .026;
+  tide.connect(tideDepth).connect(lowWater.gain);
+  tide.start();
+  natureSound = { ctx, master };
+  await ctx.resume();
+  scheduleBird(natureSound, 1200 + Math.random() * 1200);
+  elements.natureSoundToggle.classList.add('is-playing');
+  elements.natureSoundToggle.setAttribute('aria-pressed', 'true');
+  elements.natureSoundToggle.title = '关闭流水与鸟鸣';
+  showToast('自然声已开启 · 流水与鸟鸣');
+}
+
+function stopNatureSound() {
+  if (!natureSound) return;
+  clearTimeout(birdTimer);
+  const engine = natureSound;
+  natureSound = null;
+  const now = engine.ctx.currentTime;
+  engine.master.gain.cancelScheduledValues(now);
+  engine.master.gain.setValueAtTime(Math.max(engine.master.gain.value, .0001), now);
+  engine.master.gain.exponentialRampToValueAtTime(.0001, now + .35);
+  setTimeout(() => engine.ctx.close(), 420);
+  elements.natureSoundToggle.classList.remove('is-playing');
+  elements.natureSoundToggle.setAttribute('aria-pressed', 'false');
+  elements.natureSoundToggle.title = '开启流水与鸟鸣';
+  showToast('自然声已关闭');
+}
+
+elements.natureSoundToggle.addEventListener('click', () => {
+  if (natureSound) stopNatureSound();
+  else startNatureSound();
+});
+
+async function initialize() {
+  try {
+    const initial = await api.initialState();
+    state.platform = initial.platform;
+    state.locations = initial.locations;
+    state.volumes = initial.volumes;
+    document.body.classList.add(`platform-${state.platform}`);
+    const savedTheme = localStorage.getItem('easymove-theme');
+    if (savedTheme && themeNames[savedTheme]) {
+      Object.keys(themeNames).forEach((theme) => document.body.classList.remove(theme));
+      document.body.classList.add(savedTheme);
+      document.querySelectorAll('.theme-button').forEach((button) => button.classList.toggle('active', button.dataset.theme === savedTheme));
+    }
+    state.panes = [
+      makePane(0, state.locations.home),
+      makePane(1, state.locations.downloads),
+      makePane(2, state.locations.desktop),
+      makePane(3, state.locations.documents)
+    ];
+    elements.pauseTransfer.disabled = true;
+    elements.cancelTransfer.disabled = true;
+    renderAll();
+    await Promise.all(state.panes.map((pane, index) => loadPane(index, pane.path, { pushHistory: false })));
+  } catch (error) {
+    showToast(error.message || String(error), 'EasyMove 启动失败');
+  }
+}
+
+initialize();

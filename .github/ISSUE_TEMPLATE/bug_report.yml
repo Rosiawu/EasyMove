@@ -1,0 +1,49 @@
+name: Bug 报告
+description: 报告可复现的问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - macOS Apple Silicon
+        - Windows 11 x64
+        - Windows 10 x64
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: EasyMove 版本
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请使用不含隐私信息的测试文件描述完整步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果与日志
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 安全确认
+      options:
+        - label: 我已移除截图、路径和日志中的隐私信息。
+          required: true
