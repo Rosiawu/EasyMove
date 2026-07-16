@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: easymove-theme:; style-src 'self'; script-src 'self'">
   <title>EasyMove</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -17,6 +17,7 @@
     <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></symbol>
     <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m4 18 5-5 3 3 2-2 6 5"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 14v5h14v-5"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
     <symbol id="i-next" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
@@ -42,7 +43,7 @@
     <header class="titlebar">
       <div class="brand">
         <span class="brand-mark"><span></span></span>
-        <span class="brand-name">EasyMove <small>0.1.2</small></span>
+        <span class="brand-name">EasyMove <small>0.1.3</small></span>
         <svg class="brand-flower"><use href="#i-bloom"/></svg>
       </div>
 
@@ -57,6 +58,7 @@
           <button class="theme-button active" data-theme="theme-blue-mist" title="蓝雾花笺"><svg><use href="#i-bloom"/></svg><span>蓝雾</span></button>
           <button class="theme-button" data-theme="theme-iris-dream" title="鸢尾梦境"><svg><use href="#i-bloom"/></svg><span>鸢尾</span></button>
           <button class="theme-button" data-theme="theme-lakeside-journal" title="湖畔手帐"><svg><use href="#i-bloom"/></svg><span>湖畔</span></button>
+          <button class="theme-button custom-theme-button" id="customThemeButton" title="导入自己的主题图片"><svg><use href="#i-upload"/></svg><span>我的</span></button>
         </div>
 
         <button class="nature-sound-toggle" id="natureSoundToggle" aria-pressed="false" title="开启流水与鸟鸣">

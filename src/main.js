@@ -1,13 +1,103 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage, protocol, net } = require('electron');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const { pathToFileURL } = require('node:url');
 
 const operations = new Map();
 let mainWindow = null;
 
 app.setAppUserModelId('com.easymove.app');
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'easymove-theme',
+  privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
+}]);
+
+function customThemeDirectory() {
+  return path.join(app.getPath('userData'), 'themes');
+}
+
+function customThemeMetadataPath() {
+  return path.join(customThemeDirectory(), 'custom-theme.json');
+}
+
+async function readCustomTheme() {
+  try {
+    const metadata = JSON.parse(await fsp.readFile(customThemeMetadataPath(), 'utf8'));
+    const fileName = path.basename(String(metadata.fileName || ''));
+    if (!fileName) return null;
+    const filePath = path.join(customThemeDirectory(), fileName);
+    const stat = await fsp.stat(filePath);
+    if (!stat.isFile()) return null;
+    return {
+      filePath,
+      fileName,
+      name: String(metadata.name || '我的主题'),
+      importedAt: Number(metadata.importedAt || stat.mtimeMs),
+      url: `easymove-theme://custom/background?v=${Math.round(stat.mtimeMs)}`
+    };
+  } catch {
+    return null;
+  }
+}
+
+function publicCustomTheme(theme) {
+  if (!theme) return null;
+  return { name: theme.name, importedAt: theme.importedAt, url: theme.url };
+}
+
+async function installCustomTheme(sourcePath) {
+  const stat = await fsp.stat(sourcePath);
+  if (!stat.isFile()) throw new Error('请选择一张图片文件');
+  if (stat.size > 50 * 1024 * 1024) throw new Error('图片不能超过 50 MB');
+  const image = nativeImage.createFromPath(sourcePath);
+  if (image.isEmpty()) throw new Error('无法读取这张图片，请选择 PNG、JPEG 或 WebP 文件');
+
+  const originalExtension = path.extname(sourcePath).toLocaleLowerCase();
+  if (!['.png', '.jpg', '.jpeg', '.webp'].includes(originalExtension)) {
+    throw new Error('请选择 PNG、JPEG 或 WebP 图片');
+  }
+  const extension = originalExtension === '.jpeg'
+    ? '.jpg'
+    : originalExtension;
+  const directory = customThemeDirectory();
+  const fileName = `custom-background${extension}`;
+  const destination = path.join(directory, fileName);
+  const temporary = path.join(directory, `.custom-background-${Date.now()}${extension}`);
+  await fsp.mkdir(directory, { recursive: true });
+  await fsp.copyFile(sourcePath, temporary);
+  await fsp.rm(destination, { force: true });
+  await fsp.rename(temporary, destination);
+
+  const metadata = {
+    fileName,
+    name: path.basename(sourcePath, path.extname(sourcePath)),
+    importedAt: Date.now()
+  };
+  const metadataTemporary = `${customThemeMetadataPath()}.tmp`;
+  await fsp.writeFile(metadataTemporary, JSON.stringify(metadata, null, 2));
+  await fsp.rm(customThemeMetadataPath(), { force: true });
+  await fsp.rename(metadataTemporary, customThemeMetadataPath());
+
+  const entries = await fsp.readdir(directory);
+  await Promise.all(entries
+    .filter((entry) => entry.startsWith('custom-background.') && entry !== fileName)
+    .map((entry) => fsp.rm(path.join(directory, entry), { force: true })));
+  return readCustomTheme();
+}
+
+function registerThemeProtocol() {
+  protocol.handle('easymove-theme', async (request) => {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.hostname !== 'custom' || requestUrl.pathname !== '/background') {
+      return new Response('Not found', { status: 404 });
+    }
+    const theme = await readCustomTheme();
+    if (!theme) return new Response('No custom theme', { status: 404 });
+    return net.fetch(pathToFileURL(theme.filePath).href);
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -94,6 +184,7 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+  registerThemeProtocol();
   buildMenu();
   registerIpc();
   createWindow();
@@ -378,8 +469,22 @@ function registerIpc() {
   ipcMain.handle('app:initial-state', async () => ({
     platform: process.platform,
     locations: defaultLocations(),
-    volumes: await mountedVolumes()
+    volumes: await mountedVolumes(),
+    customTheme: publicCustomTheme(await readCustomTheme())
   }));
+
+  ipcMain.handle('theme:choose-custom', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择自定义主题图片',
+      properties: ['openFile'],
+      filters: [
+        { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }
+      ]
+    });
+    if (result.canceled || !result.filePaths[0]) return { canceled: true, theme: publicCustomTheme(await readCustomTheme()) };
+    const theme = await installCustomTheme(result.filePaths[0]);
+    return { canceled: false, theme: publicCustomTheme(theme) };
+  });
 
   ipcMain.handle('dialog:choose-folder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory', 'createDirectory'] });

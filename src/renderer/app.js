@@ -12,7 +12,8 @@ const state = {
   paused: false,
   toastTimer: null,
   renameTarget: null,
-  drag: null
+  drag: null,
+  customTheme: null
 };
 
 const elements = {
@@ -35,7 +36,8 @@ const elements = {
   renameModal: document.getElementById('renameModal'),
   renameForm: document.getElementById('renameForm'),
   renameInput: document.getElementById('renameInput'),
-  natureSoundToggle: document.getElementById('natureSoundToggle')
+  natureSoundToggle: document.getElementById('natureSoundToggle'),
+  customThemeButton: document.getElementById('customThemeButton')
 };
 
 function escapeHtml(value) {
@@ -666,17 +668,53 @@ document.querySelectorAll('.layout-button').forEach((button) => {
 const themeNames = {
   'theme-blue-mist': '蓝雾花笺',
   'theme-iris-dream': '鸢尾梦境',
-  'theme-lakeside-journal': '湖畔手帐'
+  'theme-lakeside-journal': '湖畔手帐',
+  'theme-custom': '我的主题'
 };
 
-document.querySelectorAll('.theme-button').forEach((button) => {
-  button.addEventListener('click', () => {
-    Object.keys(themeNames).forEach((theme) => document.body.classList.remove(theme));
-    document.body.classList.add(button.dataset.theme);
-    document.querySelectorAll('.theme-button').forEach((item) => item.classList.toggle('active', item === button));
-    localStorage.setItem('easymove-theme', button.dataset.theme);
-    showToast(`已切换为「${themeNames[button.dataset.theme]}」`);
+function updateCustomTheme(theme) {
+  state.customTheme = theme;
+  elements.customThemeButton.classList.toggle('has-image', Boolean(theme?.url));
+  elements.customThemeButton.title = theme?.url
+    ? `使用「${theme.name || '我的主题'}」；启用后再次点击可更换图片`
+    : '导入自己的主题图片';
+  if (theme?.url) {
+    document.documentElement.style.setProperty('--custom-theme-art', `url("${theme.url}")`);
+  }
+}
+
+function applyTheme(theme, announce = true) {
+  Object.keys(themeNames).forEach((item) => document.body.classList.remove(item));
+  document.body.classList.add(theme);
+  document.querySelectorAll('.theme-button').forEach((button) => {
+    const buttonTheme = button === elements.customThemeButton ? 'theme-custom' : button.dataset.theme;
+    button.classList.toggle('active', buttonTheme === theme);
   });
+  localStorage.setItem('easymove-theme', theme);
+  if (announce) showToast(`已切换为「${theme === 'theme-custom' ? (state.customTheme?.name || '我的主题') : themeNames[theme]}」`);
+}
+
+document.querySelectorAll('.theme-button[data-theme]').forEach((button) => {
+  button.addEventListener('click', () => {
+    applyTheme(button.dataset.theme);
+  });
+});
+
+elements.customThemeButton.addEventListener('click', async () => {
+  if (state.customTheme?.url && !document.body.classList.contains('theme-custom')) {
+    applyTheme('theme-custom');
+    return;
+  }
+  try {
+    const result = await api.chooseCustomTheme();
+    if (result?.canceled) return;
+    updateCustomTheme(result?.theme || null);
+    if (!state.customTheme?.url) return showToast('没有找到可用的自定义图片', '主题导入失败');
+    applyTheme('theme-custom', false);
+    showToast(`「${state.customTheme.name || '我的主题'}」已保存并应用`, '自定义主题');
+  } catch (error) {
+    showToast(error.message || String(error), '主题导入失败');
+  }
 });
 
 elements.quickNav.addEventListener('click', (event) => {
@@ -920,13 +958,11 @@ async function initialize() {
     state.platform = initial.platform;
     state.locations = initial.locations;
     state.volumes = initial.volumes;
+    updateCustomTheme(initial.customTheme || null);
     document.body.classList.add(`platform-${state.platform}`);
     const savedTheme = localStorage.getItem('easymove-theme');
-    if (savedTheme && themeNames[savedTheme]) {
-      Object.keys(themeNames).forEach((theme) => document.body.classList.remove(theme));
-      document.body.classList.add(savedTheme);
-      document.querySelectorAll('.theme-button').forEach((button) => button.classList.toggle('active', button.dataset.theme === savedTheme));
-    }
+    const usableTheme = savedTheme === 'theme-custom' && !state.customTheme?.url ? 'theme-blue-mist' : savedTheme;
+    if (usableTheme && themeNames[usableTheme]) applyTheme(usableTheme, false);
     state.panes = [
       makePane(0, state.locations.home),
       makePane(1, state.locations.downloads),

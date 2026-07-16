@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('easyMove', {
   initialState: () => ipcRenderer.invoke('app:initial-state'),
+  chooseCustomTheme: () => ipcRenderer.invoke('theme:choose-custom'),
   chooseFolder: () => ipcRenderer.invoke('dialog:choose-folder'),
   listDirectory: (path, showHidden = false) => ipcRenderer.invoke('fs:list', { path, showHidden }),
   createFolder: (path) => ipcRenderer.invoke('fs:create-folder', path),
