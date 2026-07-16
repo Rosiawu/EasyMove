@@ -250,11 +250,36 @@ function renderAll() {
   renderSelectionSummary();
 }
 
+function syncPaneInteractionState() {
+  elements.panes.querySelectorAll('.pane').forEach((paneElement) => {
+    const paneIndex = Number(paneElement.dataset.pane);
+    const pane = state.panes[paneIndex];
+    paneElement.classList.toggle('active', paneIndex === state.activePane);
+    paneElement.querySelectorAll('.file-row').forEach((row) => {
+      const filePath = decodePath(row.dataset.path);
+      row.classList.toggle('selected', pane.selection.has(filePath));
+      row.classList.toggle('cut', state.clipboard?.mode === 'move' && state.clipboard.paths.includes(filePath));
+      row.setAttribute('aria-selected', pane.selection.has(filePath) ? 'true' : 'false');
+    });
+
+    const status = paneElement.querySelector('.pane-status');
+    if (status) {
+      const selectedSize = pane.entries
+        .filter((entry) => pane.selection.has(entry.path) && !entry.isDirectory)
+        .reduce((sum, entry) => sum + entry.size, 0);
+      status.children[0].textContent = pane.selection.size ? `已选择 ${pane.selection.size} 项` : `${pane.entries.length} 个项目`;
+      status.children[1].textContent = selectedSize ? formatSize(selectedSize) : pane.path;
+    }
+  });
+  elements.globalSearch.value = activePane().filter;
+  renderSidebar();
+  renderSelectionSummary();
+}
+
 function setActivePane(index) {
   if (!visiblePaneIndexes().includes(index)) return;
   state.activePane = index;
-  elements.globalSearch.value = activePane().filter;
-  renderAll();
+  syncPaneInteractionState();
 }
 
 function selectRow(paneIndex, path, event) {
@@ -278,7 +303,7 @@ function selectRow(paneIndex, path, event) {
     pane.anchorPath = path;
   }
   state.activePane = paneIndex;
-  renderAll();
+  syncPaneInteractionState();
 }
 
 function selectedPaths() {
@@ -289,8 +314,14 @@ function copySelection(mode) {
   const paths = selectedPaths();
   if (!paths.length) return showToast('请先选择文件或文件夹');
   state.clipboard = { paths, mode };
-  renderPanes();
+  syncPaneInteractionState();
   showToast(`${paths.length} 项已${mode === 'move' ? '剪切' : '复制'}，请选择目标窗格后粘贴`);
+}
+
+function selectAllEntries() {
+  const pane = activePane();
+  filteredEntries(pane).forEach((entry) => pane.selection.add(entry.path));
+  syncPaneInteractionState();
 }
 
 async function startTransfer(paths, targetDirectory, mode) {
@@ -314,6 +345,11 @@ async function startTransfer(paths, targetDirectory, mode) {
 async function pasteClipboard() {
   if (!state.clipboard?.paths.length) return showToast('剪贴板中没有 EasyMove 文件');
   await startTransfer(state.clipboard.paths, activePane().path, state.clipboard.mode);
+}
+
+async function pasteClipboardAsMove() {
+  if (!state.clipboard?.paths.length) return showToast('剪贴板中没有 EasyMove 文件');
+  await startTransfer(state.clipboard.paths, activePane().path, 'move');
 }
 
 async function transferToOther(mode) {
@@ -371,6 +407,8 @@ async function executeCommand(command) {
   if (command === 'copy') return copySelection('copy');
   if (command === 'cut') return copySelection('move');
   if (command === 'paste') return pasteClipboard();
+  if (command === 'paste-move') return pasteClipboardAsMove();
+  if (command === 'select-all') return selectAllEntries();
   if (command === 'rename') return openRenameDialog();
   if (command === 'trash') return trashSelection();
   if (command === 'copy-other') return transferToOther('copy');
@@ -560,17 +598,29 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeRenameDialog();
     return;
   }
+  if (modifier && event.shiftKey && event.key.toLowerCase() === 'n') { event.preventDefault(); createFolder(); return; }
+  if (modifier && event.altKey && event.key.toLowerCase() === 'v') { event.preventDefault(); pasteClipboardAsMove(); return; }
   if (modifier && event.key.toLowerCase() === 'c') { event.preventDefault(); copySelection('copy'); }
   if (modifier && event.key.toLowerCase() === 'x') { event.preventDefault(); copySelection('move'); }
   if (modifier && event.key.toLowerCase() === 'v') { event.preventDefault(); pasteClipboard(); }
   if (modifier && event.key.toLowerCase() === 'a') {
     event.preventDefault();
-    activePane().entries.forEach((entry) => activePane().selection.add(entry.path));
-    renderAll();
+    selectAllEntries();
   }
+  if (state.platform === 'darwin' && modifier && event.key === 'Backspace') { event.preventDefault(); trashSelection(); }
+  if (state.platform === 'darwin' && event.key === 'Enter') { event.preventDefault(); openRenameDialog(); }
   if (event.key === 'F2') { event.preventDefault(); openRenameDialog(); }
   if (event.key === 'Delete') { event.preventDefault(); trashSelection(); }
   if (event.key === 'Escape') closeRenameDialog();
+});
+
+api.onMenuCommand((command) => {
+  const editing = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+  if (editing && ['copy', 'cut', 'paste', 'select-all'].includes(command)) {
+    api.nativeEdit(command);
+    return;
+  }
+  executeCommand(command);
 });
 
 let natureSound = null;

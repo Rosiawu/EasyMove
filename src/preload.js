@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('easyMove', {
   trash: (paths) => ipcRenderer.invoke('fs:trash', paths),
   open: (path) => ipcRenderer.invoke('fs:open', path),
   reveal: (path) => ipcRenderer.invoke('fs:reveal', path),
+  nativeEdit: (command) => ipcRenderer.send('app:native-edit', command),
   transfer: (sources, targetDirectory, mode) => ipcRenderer.invoke('fs:transfer', { sources, targetDirectory, mode }),
   controlOperation: (id, action) => ipcRenderer.invoke('operation:control', { id, action }),
   onOperationProgress: (callback) => {
@@ -20,5 +21,10 @@ contextBridge.exposeInMainWorld('easyMove', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('operation:complete', listener);
     return () => ipcRenderer.removeListener('operation:complete', listener);
+  },
+  onMenuCommand: (callback) => {
+    const listener = (_event, command) => callback(command);
+    ipcRenderer.on('menu:command', listener);
+    return () => ipcRenderer.removeListener('menu:command', listener);
   }
 });

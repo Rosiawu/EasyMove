@@ -1,11 +1,19 @@
-# EasyMove 0.1.0 发布说明
+# EasyMove 0.1.1 发布说明
 
-这是 EasyMove 的首个可安装测试版。
+这是 EasyMove 的首个交互修正版。
+
+## 本次修正
+
+- 修复点击文件后窗格被重绘、滚动位置跳回顶部的问题
+- 文件选择改为原地更新，单选、`⌘` 多选与 `Shift` 连选均不会扰动当前位置
+- macOS 菜单直接连接 EasyMove 文件命令，支持 `⌘C`、`⌘X`、`⌘V`、`⌘A`
+- 新增 Finder 风格的 `⌥⌘V` 移动到当前窗格、`⇧⌘N` 新建文件夹、Return 重命名与 `⌘Delete` 移到废纸篓
+- 主界面整体内收，四边保留 20px 不被面板遮挡的水彩画框
 
 ## 安装包
 
-- `EasyMove-0.1.0-mac-arm64.dmg`：macOS Apple Silicon（M 系列芯片）
-- `EasyMove-0.1.0-win-x64.exe`：Windows 10/11 x64 安装器
+- `EasyMove-0.1.1-mac-arm64.dmg`：macOS Apple Silicon（M 系列芯片）
+- `EasyMove-0.1.1-win-x64.exe`：Windows 10/11 x64 安装器
 
 ## 首次启动
 

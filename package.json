@@ -1,6 +1,6 @@
 {
   "name": "easymove",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A romantic multi-pane file manager for Windows and macOS.",
   "main": "src/main.js",
   "author": "EasyMove Contributors",
@@ -36,7 +36,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "category": "public.app-category.utilities",
@@ -53,15 +55,26 @@
         "height": 420
       },
       "contents": [
-        { "x": 170, "y": 205, "type": "file" },
-        { "x": 430, "y": 205, "type": "link", "path": "/Applications" }
+        {
+          "x": 170,
+          "y": 205,
+          "type": "file"
+        },
+        {
+          "x": 430,
+          "y": 205,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.png"
@@ -72,7 +85,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "EasyMove",
-      "installerLanguages": ["zh_CN", "en_US"]
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ]
     }
   }
 }

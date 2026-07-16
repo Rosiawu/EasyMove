@@ -19,7 +19,7 @@ function createWindow() {
     title: 'EasyMove',
     backgroundColor: '#f2f4f8',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    trafficLightPosition: { x: 18, y: 20 },
+    trafficLightPosition: { x: 30, y: 31 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -34,6 +34,11 @@ function createWindow() {
 }
 
 function buildMenu() {
+  const commandItem = (label, accelerator, command) => ({
+    label,
+    accelerator,
+    click: (_item, focusedWindow) => focusedWindow?.webContents.send('menu:command', command)
+  });
   const template = [
     ...(process.platform === 'darwin' ? [{
       label: 'EasyMove',
@@ -48,15 +53,26 @@ function buildMenu() {
       ]
     }] : []),
     {
+      label: '文件',
+      submenu: [
+        commandItem('新建文件夹', 'CommandOrControl+Shift+N', 'new-folder'),
+        commandItem('重命名', process.platform === 'darwin' ? 'Enter' : 'F2', 'rename'),
+        { type: 'separator' },
+        commandItem(process.platform === 'darwin' ? '移到废纸篓' : '移到回收站', process.platform === 'darwin' ? 'CommandOrControl+Backspace' : 'Delete', 'trash')
+      ]
+    },
+    {
       label: '编辑',
       submenu: [
         { role: 'undo' },
         { role: 'redo' },
         { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' }
+        commandItem('剪切', 'CommandOrControl+X', 'cut'),
+        commandItem('复制', 'CommandOrControl+C', 'copy'),
+        commandItem('粘贴', 'CommandOrControl+V', 'paste'),
+        ...(process.platform === 'darwin' ? [commandItem('移动项目到这里', 'CommandOrControl+Alt+V', 'paste-move')] : []),
+        { type: 'separator' },
+        commandItem('全选', 'CommandOrControl+A', 'select-all')
       ]
     },
     {
@@ -342,6 +358,13 @@ async function runTransfer(sender, operation, sources, targetDirectory, mode) {
 }
 
 function registerIpc() {
+  ipcMain.on('app:native-edit', (event, command) => {
+    const method = command === 'select-all' ? 'selectAll' : command;
+    if (['copy', 'cut', 'paste', 'selectAll'].includes(method) && typeof event.sender[method] === 'function') {
+      event.sender[method]();
+    }
+  });
+
   ipcMain.handle('app:initial-state', async () => ({
     platform: process.platform,
     locations: defaultLocations(),
