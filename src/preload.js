@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('easyMove', {
   initialState: () => ipcRenderer.invoke('app:initial-state'),
@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('easyMove', {
   trash: (paths) => ipcRenderer.invoke('fs:trash', paths),
   open: (path) => ipcRenderer.invoke('fs:open', path),
   reveal: (path) => ipcRenderer.invoke('fs:reveal', path),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+  defaultDragMode: (sources, targetDirectory) => ipcRenderer.invoke('fs:drag-default-mode', { sources, targetDirectory }),
+  startNativeDrag: (paths) => ipcRenderer.send('drag:start-native', paths),
   nativeEdit: (command) => ipcRenderer.send('app:native-edit', command),
   transfer: (sources, targetDirectory, mode) => ipcRenderer.invoke('fs:transfer', { sources, targetDirectory, mode }),
   controlOperation: (id, action) => ipcRenderer.invoke('operation:control', { id, action }),

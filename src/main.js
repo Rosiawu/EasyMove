@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeImage } = require('electron');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
@@ -365,6 +365,16 @@ function registerIpc() {
     }
   });
 
+  ipcMain.on('drag:start-native', (event, requestedPaths) => {
+    const files = Array.from(new Set((requestedPaths || [])
+      .map((item) => path.resolve(String(item)))
+      .filter((item) => fs.existsSync(item))));
+    if (!files.length) return;
+    const iconPath = path.join(__dirname, '..', 'assets', 'drag-icon.png');
+    const icon = nativeImage.createFromPath(iconPath).resize({ width: 36, height: 36 });
+    event.sender.startDrag({ file: files[0], files, icon });
+  });
+
   ipcMain.handle('app:initial-state', async () => ({
     platform: process.platform,
     locations: defaultLocations(),
@@ -414,6 +424,17 @@ function registerIpc() {
 
   ipcMain.handle('fs:open', async (_event, itemPath) => shell.openPath(path.resolve(itemPath)));
   ipcMain.handle('fs:reveal', async (_event, itemPath) => shell.showItemInFolder(path.resolve(itemPath)));
+
+  ipcMain.handle('fs:drag-default-mode', async (_event, request) => {
+    const targetDirectory = normalizeDirectory(request.targetDirectory);
+    const targetStat = await fsp.stat(targetDirectory);
+    const sources = Array.from(new Set((request.sources || []).map((item) => path.resolve(item))));
+    for (const source of sources) {
+      const sourceStat = await fsp.stat(source);
+      if (sourceStat.dev !== targetStat.dev) return 'copy';
+    }
+    return 'move';
+  });
 
   ipcMain.handle('fs:transfer', async (event, request) => {
     const id = `op-${Date.now()}-${Math.random().toString(16).slice(2)}`;

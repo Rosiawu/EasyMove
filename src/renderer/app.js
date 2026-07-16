@@ -11,7 +11,8 @@ const state = {
   operation: null,
   paused: false,
   toastTimer: null,
-  renameTarget: null
+  renameTarget: null,
+  drag: null
 };
 
 const elements = {
@@ -179,7 +180,7 @@ function renderPane(pane) {
     const selected = pane.selection.has(entry.path) ? ' selected' : '';
     const cut = state.clipboard?.mode === 'move' && state.clipboard.paths.includes(entry.path) ? ' cut' : '';
     const fileIcon = entry.isDirectory ? icon('folder') : icon('image');
-    return `<tr class="file-row${selected}${cut}" data-pane="${pane.id}" data-path="${encodePath(entry.path)}">
+    return `<tr class="file-row${selected}${cut}" data-pane="${pane.id}" data-path="${encodePath(entry.path)}" draggable="true" aria-selected="${pane.selection.has(entry.path) ? 'true' : 'false'}">
       <td><div class="file-name"><span class="file-icon${entry.isDirectory ? '' : ' file'}">${fileIcon}</span><span>${escapeHtml(entry.name)}</span></div></td>
       <td>${escapeHtml(entry.kind)}</td>
       <td>${escapeHtml(formatDate(entry.modified))}</td>
@@ -359,6 +360,102 @@ async function transferToOther(mode) {
   await startTransfer(paths, target.path, mode);
 }
 
+function volumeKey(filePath) {
+  if (state.platform === 'win32') return filePath.slice(0, 2).toLocaleUpperCase();
+  const normalized = filePath.replaceAll('\\', '/');
+  const match = normalized.match(/^\/Volumes\/[^/]+/);
+  return match?.[0] || '/';
+}
+
+function heuristicDragMode(paths, targetDirectory, event) {
+  if (event.shiftKey) return 'move';
+  if (event.ctrlKey || event.altKey) return 'copy';
+  if (!paths.length) return 'copy';
+  return paths.some((filePath) => volumeKey(filePath) !== volumeKey(targetDirectory)) ? 'copy' : 'move';
+}
+
+async function resolvedDragMode(paths, targetDirectory, event) {
+  if (event.shiftKey) return 'move';
+  if (event.ctrlKey || event.altKey) return 'copy';
+  try {
+    return await api.defaultDragMode(paths, targetDirectory);
+  } catch {
+    return heuristicDragMode(paths, targetDirectory, event);
+  }
+}
+
+function resolveDropTarget(target) {
+  const paneElement = target.closest?.('.pane');
+  if (!paneElement) return null;
+  const paneIndex = Number(paneElement.dataset.pane);
+  const pane = state.panes[paneIndex];
+  const row = target.closest?.('.file-row');
+  if (row) {
+    const filePath = decodePath(row.dataset.path);
+    const entry = pane.entries.find((item) => item.path === filePath);
+    if (entry?.isDirectory) return { paneIndex, directory: entry.path, paneElement, folderRow: row };
+  }
+  return { paneIndex, directory: pane.path, paneElement, folderRow: null };
+}
+
+function dragPathsFromEvent(event) {
+  if (state.drag?.paths.length) return state.drag.paths;
+  const encoded = event.dataTransfer?.getData('application/x-easymove-paths');
+  if (!encoded) return [];
+  try {
+    const paths = JSON.parse(encoded);
+    return Array.isArray(paths) ? paths : [];
+  } catch {
+    return [];
+  }
+}
+
+function externalPathsFromEvent(event) {
+  return Array.from(event.dataTransfer?.files || [])
+    .map((file) => {
+      try { return api.getPathForFile(file); } catch { return ''; }
+    })
+    .filter(Boolean);
+}
+
+function invalidDropReason(paths, targetDirectory, mode) {
+  const normalize = (value) => {
+    const normalized = value.replace(/[\\/]+$/, '') || (state.platform === 'win32' ? value.slice(0, 3) : '/');
+    return state.platform === 'win32' ? normalized.toLocaleLowerCase() : normalized;
+  };
+  const target = normalize(targetDirectory);
+  for (const sourcePath of paths) {
+    const source = normalize(sourcePath);
+    if (source === target) return '不能拖到项目自身';
+    const separator = state.platform === 'win32' ? '\\' : '/';
+    if (target.startsWith(`${source}${separator}`)) return '不能拖到项目内部';
+  }
+  if (mode === 'move' && paths.length && paths.every((sourcePath) => normalize(parentPath(sourcePath)) === target)) {
+    return '项目已经在这个文件夹中';
+  }
+  return '';
+}
+
+function clearDropFeedback() {
+  elements.panes.classList.remove('is-dragging');
+  elements.panes.querySelectorAll('.pane.drop-target').forEach((pane) => {
+    pane.classList.remove('drop-target', 'drop-invalid');
+    delete pane.dataset.dropLabel;
+  });
+  elements.panes.querySelectorAll('.file-row.folder-drop-target').forEach((row) => row.classList.remove('folder-drop-target'));
+}
+
+function showDropFeedback(target, mode, paths) {
+  clearDropFeedback();
+  elements.panes.classList.add('is-dragging');
+  const reason = invalidDropReason(paths, target.directory, mode);
+  target.paneElement.classList.add('drop-target');
+  if (reason) target.paneElement.classList.add('drop-invalid');
+  if (target.folderRow) target.folderRow.classList.add('folder-drop-target');
+  target.paneElement.dataset.dropLabel = reason || `${mode === 'copy' ? '复制' : '移动'}到「${basename(target.directory)}」`;
+  return !reason;
+}
+
 async function createFolder() {
   try {
     const created = await api.createFolder(activePane().path);
@@ -425,6 +522,86 @@ elements.panes.addEventListener('mousedown', (event) => {
   elements.panes.querySelectorAll('.pane').forEach((pane) => pane.classList.toggle('active', Number(pane.dataset.pane) === index));
   renderSidebar();
   renderSelectionSummary();
+});
+
+elements.panes.addEventListener('dragstart', (event) => {
+  const row = event.target.closest('.file-row');
+  if (!row || !event.dataTransfer) return;
+  const paneIndex = Number(row.dataset.pane);
+  const filePath = decodePath(row.dataset.path);
+  const pane = state.panes[paneIndex];
+  if (!pane.selection.has(filePath)) {
+    selectRow(paneIndex, filePath, { shiftKey: false, metaKey: false, ctrlKey: false });
+  }
+  const paths = Array.from(pane.selection);
+  state.drag = { paths, sourcePane: paneIndex };
+  event.dataTransfer.effectAllowed = 'copyMove';
+  event.dataTransfer.setData('application/x-easymove-paths', JSON.stringify(paths));
+  event.dataTransfer.setData('text/plain', paths.join('\n'));
+  event.dataTransfer.setDragImage(row, 24, 16);
+  if (event.isTrusted) {
+    event.preventDefault();
+    state.drag = null;
+    clearDropFeedback();
+    api.startNativeDrag(paths);
+    return;
+  }
+  elements.panes.classList.add('is-dragging');
+  requestAnimationFrame(() => {
+    elements.panes.querySelectorAll('.file-row').forEach((item) => {
+      item.classList.toggle('drag-source', paths.includes(decodePath(item.dataset.path)));
+    });
+  });
+});
+
+elements.panes.addEventListener('dragover', (event) => {
+  const types = Array.from(event.dataTransfer?.types || []);
+  if (!state.drag && !types.includes('Files')) return;
+  const target = resolveDropTarget(event.target);
+  if (!target) return;
+  event.preventDefault();
+  const paths = dragPathsFromEvent(event);
+  if (!paths.length) paths.push(...externalPathsFromEvent(event));
+  const mode = heuristicDragMode(paths, target.directory, event);
+  const valid = showDropFeedback(target, mode, paths);
+  event.dataTransfer.dropEffect = valid ? mode : 'none';
+});
+
+elements.panes.addEventListener('drop', async (event) => {
+  const target = resolveDropTarget(event.target);
+  if (!target) return;
+  event.preventDefault();
+  const paths = dragPathsFromEvent(event);
+  if (!paths.length) paths.push(...externalPathsFromEvent(event));
+  const modifier = { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, altKey: event.altKey };
+  clearDropFeedback();
+  state.drag = null;
+  if (!paths.length) return showToast('没有识别到可拖放的文件');
+  const mode = await resolvedDragMode(paths, target.directory, modifier);
+  const reason = invalidDropReason(paths, target.directory, mode);
+  if (reason) return showToast(reason, '无法完成拖放');
+  state.activePane = target.paneIndex;
+  syncPaneInteractionState();
+  showToast(`${paths.length} 项将${mode === 'copy' ? '复制' : '移动'}到「${basename(target.directory)}」`, '拖放传输');
+  await startTransfer(paths, target.directory, mode);
+});
+
+document.addEventListener('dragend', () => {
+  state.drag = null;
+  clearDropFeedback();
+  elements.panes.querySelectorAll('.file-row.drag-source').forEach((row) => row.classList.remove('drag-source'));
+});
+
+window.addEventListener('dragover', (event) => {
+  if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
+});
+
+window.addEventListener('drop', (event) => {
+  if (!event.target.closest?.('.pane')) {
+    event.preventDefault();
+    state.drag = null;
+    clearDropFeedback();
+  }
 });
 
 elements.panes.addEventListener('click', (event) => {
