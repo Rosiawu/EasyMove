@@ -1,37 +1,27 @@
-# EasyMove 0.1.4 发布说明
+# EasyMove 0.2.0 发布说明
 
-这是 EasyMove 的文件夹大小版本。
+这是 EasyMove 的排序与预览版本。
 
 ## 本次更新
 
-- 文件列表会在后台递归计算文件夹内所有普通文件的总大小
-- 计算在独立 worker thread 中完成，不阻塞界面；整批结果完成后稳定更新
-- 不跟随文件或目录符号链接，避免循环与重复统计
-- 权限不足、文件消失和目录变化会被安全跳过，不影响同批其他文件夹
-- 路径切换或刷新后，过期计算结果不会覆盖当前目录
-- 同一路径结果短时缓存，文件创建、重命名、删除和传输后自动失效
+- 核心界面字号整体提升一级，文件行与缩略图同步增大
+- 每个窗格独立按名称、类型、修改时间或大小升降序排列；所有字段稳定保持文件夹优先
+- 文件夹异步大小整批返回后一次重排，未完成项稳定排在已知大小之后
+- 图片显示真实缩略图，图片文件夹显示自然名称排序的第一张直接子图片并保留文件夹边框
+- macOS Quick Look 为 PDF、视频、文本与系统支持的办公文档生成预览；失败时回退类型图标
+- 图标悬停 400ms 显示大图、名称、类型、修改时间、大小与文件夹前五项
+- 缩略图服务限制为两个并发任务、8 秒超时、1 GB 源文件上限，使用 path、mtime 和 size 组成缓存键
+- 缓存只通过受控 `easymove-thumb` 协议读取，文件操作后自动失效
+
+## 支持矩阵
+
+- 图片：PNG、JPEG、WebP、GIF、BMP、HEIC、TIFF
+- macOS Quick Look：PDF、MOV、MP4、M4V、AVI、TXT、RTF、Markdown、HTML、Pages、Keynote、Numbers、DOC/DOCX、XLS/XLSX、PPT/PPTX
+- 实际 Quick Look 结果取决于 macOS 版本及本机可用预览生成器；失败、权限不足、损坏或消失文件均回退类型图标
+- Windows：图片缩略图与图片文件夹封面；其他文件回退类型图标
 
 ## 安装包
 
-- `EasyMove-0.1.4-mac-arm64.dmg`：macOS Apple Silicon（M 系列芯片）
+- `EasyMove-0.2.0-mac-arm64.dmg`：macOS Apple Silicon（M 系列芯片）
 
-## 首次启动
-
-macOS 安装包未使用 Apple Developer ID 签名，也未经过 Apple 公证。打开 DMG 并将 EasyMove 拖入“应用程序”。首次启动若受阻，请在 Finder 中右键应用并选择“打开”。
-
-## 验证摘要
-
-- JavaScript 静态语法检查和文件夹大小自动化测试通过
-- 单窗格、双窗格、四窗格及大小列视觉回归通过
-- 嵌套目录、空目录、权限/消失、符号链接循环和过期请求覆盖通过
-- macOS DMG 镜像、挂载应用启动和文件夹大小工作流验证通过
-
-## 校验文件
-
-在终端中运行：
-
-```bash
-shasum -a 256 EasyMove-0.1.4-mac-arm64.dmg
-```
-
-输出应与 `SHA256SUMS-0.1.4.txt` 一致。
+macOS 安装包未使用 Apple Developer ID 签名，也未经过 Apple 公证。首次启动若受阻，请在 Finder 中右键应用并选择“打开”。

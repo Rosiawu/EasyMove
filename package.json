@@ -1,6 +1,6 @@
 {
   "name": "easymove",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "A romantic multi-pane file manager for Windows and macOS.",
   "main": "src/main.js",
   "author": "EasyMove Contributors",
@@ -8,7 +8,7 @@
   "private": false,
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/app.js && node --check src/folder-size-service.js && node --check src/folder-size-worker.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/app.js && node --check src/folder-size-service.js && node --check src/folder-size-worker.js && node --check src/thumbnail-service.js && node --check src/sort-utils.js",
     "test": "node --test test/*.test.js",
     "dist:mac": "electron-builder --mac dmg --arm64",
     "dist:win": "electron-builder --win nsis --x64",

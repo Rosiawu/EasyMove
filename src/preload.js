@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('easyMove', {
   chooseFolder: () => ipcRenderer.invoke('dialog:choose-folder'),
   listDirectory: (path, showHidden = false) => ipcRenderer.invoke('fs:list', { path, showHidden }),
   folderSizes: (paths) => ipcRenderer.invoke('fs:folder-sizes', paths),
+  preview: (path) => ipcRenderer.invoke('fs:preview', path),
   createFolder: (path) => ipcRenderer.invoke('fs:create-folder', path),
   rename: (path, name) => ipcRenderer.invoke('fs:rename', { path, name }),
   trash: (paths) => ipcRenderer.invoke('fs:trash', paths),

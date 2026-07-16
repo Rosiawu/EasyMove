@@ -13,7 +13,9 @@ const state = {
   toastTimer: null,
   renameTarget: null,
   drag: null,
-  customTheme: null
+  customTheme: null,
+  hoverTimer: null,
+  hoverToken: 0
 };
 
 const elements = {
@@ -37,7 +39,8 @@ const elements = {
   renameForm: document.getElementById('renameForm'),
   renameInput: document.getElementById('renameInput'),
   natureSoundToggle: document.getElementById('natureSoundToggle'),
-  customThemeButton: document.getElementById('customThemeButton')
+  customThemeButton: document.getElementById('customThemeButton'),
+  hoverPreview: document.getElementById('hoverPreview')
 };
 
 function escapeHtml(value) {
@@ -117,7 +120,8 @@ function makePane(id, path) {
     filter: '',
     showHidden: false,
     loadToken: 0,
-    anchorPath: null
+    anchorPath: null,
+    sort: { field: 'name', direction: 'asc' }
   };
 }
 
@@ -136,7 +140,10 @@ async function loadPane(index, targetPath, options = {}) {
     pane.path = result.path;
     pane.entries = result.entries.map((entry) => ({
       ...entry,
-      folderSizeStatus: entry.isDirectory ? 'loading' : 'ready'
+      folderSizeStatus: entry.isDirectory ? 'loading' : 'ready',
+      previewStatus: 'loading',
+      previewUrl: null,
+      folderCover: false
     }));
     pane.loading = false;
     pane.error = '';
@@ -146,6 +153,18 @@ async function loadPane(index, targetPath, options = {}) {
       pane.historyIndex = pane.history.length - 1;
     }
     if (index === state.activePane) elements.globalSearch.value = pane.filter;
+    renderAll();
+
+    const previewResults = await Promise.all(pane.entries.map(async (entry) => {
+      const preview = await api.preview(entry.path);
+      return { path: entry.path, ...preview };
+    }));
+    if (pane.loadToken !== token) return;
+    const previewMap = new Map(previewResults.map((preview) => [preview.path, preview]));
+    pane.entries = pane.entries.map((entry) => {
+      const preview = previewMap.get(entry.path);
+      return { ...entry, previewStatus: 'ready', previewUrl: preview?.url || null, folderCover: Boolean(preview?.folderCover), previewChildren: preview?.children || [] };
+    });
     renderAll();
 
     const directories = pane.entries.filter((entry) => entry.isDirectory).map((entry) => entry.path);
@@ -194,8 +213,13 @@ function otherPaneIndex() {
 
 function filteredEntries(pane) {
   const query = pane.filter.trim().toLocaleLowerCase();
-  if (!query) return pane.entries;
-  return pane.entries.filter((entry) => entry.name.toLocaleLowerCase().includes(query));
+  const entries = query ? pane.entries.filter((entry) => entry.name.toLocaleLowerCase().includes(query)) : pane.entries;
+  return window.easyMoveSort.sortEntries(entries, pane.sort);
+}
+
+function sortIndicator(pane, field) {
+  if (pane.sort.field !== field) return '';
+  return `<span class="sort-indicator" aria-hidden="true">${pane.sort.direction === 'asc' ? '↑' : '↓'}</span>`;
 }
 
 function renderPane(pane) {
@@ -204,15 +228,17 @@ function renderPane(pane) {
     const selected = pane.selection.has(entry.path) ? ' selected' : '';
     const cut = state.clipboard?.mode === 'move' && state.clipboard.paths.includes(entry.path) ? ' cut' : '';
     const fileIcon = entry.isDirectory ? icon('folder') : icon('image');
+    const thumbnail = entry.previewUrl ? `<img src="${escapeHtml(entry.previewUrl)}" alt="">` : fileIcon;
     return `<tr class="file-row${selected}${cut}" data-pane="${pane.id}" data-path="${encodePath(entry.path)}" draggable="true" aria-selected="${pane.selection.has(entry.path) ? 'true' : 'false'}">
-      <td><div class="file-name"><span class="file-icon${entry.isDirectory ? '' : ' file'}">${fileIcon}</span><span>${escapeHtml(entry.name)}</span></div></td>
+      <td><div class="file-name" title="${escapeHtml(entry.name)}"><span class="file-icon${entry.isDirectory ? (entry.folderCover ? ' folder-cover' : '') : ' file'}" data-preview-icon>${thumbnail}</span><span>${escapeHtml(entry.name)}</span></div></td>
       <td>${escapeHtml(entry.kind)}</td>
       <td>${escapeHtml(formatDate(entry.modified))}</td>
       <td class="size-cell${entry.folderSizeStatus === 'loading' ? ' calculating' : ''}">${entry.folderSizeStatus === 'loading' ? '计算中…' : escapeHtml(formatSize(entry.size))}</td>
     </tr>`;
   }).join('');
 
-  let content = `<table class="file-table"><thead><tr><th>名称</th><th>类型</th><th>修改时间</th><th>大小</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const header = (field, label) => `<button class="sort-button" data-sort="${field}" data-pane="${pane.id}" aria-label="按${label}排序，当前${pane.sort.field === field ? (pane.sort.direction === 'asc' ? '升序' : '降序') : '未排序'}">${label}${sortIndicator(pane, field)}</button>`;
+  let content = `<table class="file-table"><thead><tr><th>${header('name', '名称')}</th><th>${header('type', '类型')}</th><th>${header('modified', '修改时间')}</th><th>${header('size', '大小')}</th></tr></thead><tbody>${rows}</tbody></table>`;
   if (pane.loading) content = `<div class="empty-state"><div>${icon('refresh')}<br>正在读取文件夹…</div></div>`;
   else if (pane.error) content = `<div class="empty-state"><div>${icon('close')}<br>${escapeHtml(pane.error)}</div></div>`;
   else if (!entries.length) content = `<div class="empty-state"><div>${icon('bloom')}<br>${pane.filter ? '没有匹配的文件' : '这个文件夹是空的'}</div></div>`;
@@ -629,6 +655,14 @@ window.addEventListener('drop', (event) => {
 });
 
 elements.panes.addEventListener('click', (event) => {
+  const sortButton = event.target.closest('[data-sort]');
+  if (sortButton) {
+    const pane = state.panes[Number(sortButton.dataset.pane)];
+    const field = sortButton.dataset.sort;
+    pane.sort = pane.sort.field === field ? { field, direction: pane.sort.direction === 'asc' ? 'desc' : 'asc' } : { field, direction: 'asc' };
+    renderPanes();
+    return;
+  }
   const row = event.target.closest('.file-row');
   if (row) {
     selectRow(Number(row.dataset.pane), decodePath(row.dataset.path), event);
@@ -649,6 +683,43 @@ elements.panes.addEventListener('click', (event) => {
   if (action.dataset.paneAction === 'up') loadPane(index, parentPath(pane.path));
   if (action.dataset.paneAction === 'refresh') loadPane(index, pane.path, { pushHistory: false });
 });
+
+function hideHoverPreview() {
+  clearTimeout(state.hoverTimer);
+  state.hoverToken += 1;
+  elements.hoverPreview.hidden = true;
+}
+
+elements.panes.addEventListener('mouseover', (event) => {
+  const previewIcon = event.target.closest('[data-preview-icon]');
+  if (!previewIcon) return;
+  const row = previewIcon.closest('.file-row');
+  const pane = state.panes[Number(row.dataset.pane)];
+  const entry = pane.entries.find((item) => item.path === decodePath(row.dataset.path));
+  if (!entry) return;
+  clearTimeout(state.hoverTimer);
+  const token = ++state.hoverToken;
+  state.hoverTimer = setTimeout(() => {
+    if (token !== state.hoverToken || !previewIcon.isConnected) return;
+    const media = entry.previewUrl ? `<img src="${escapeHtml(entry.previewUrl)}" alt="">` : `<div class="preview-fallback">${entry.isDirectory ? icon('folder') : icon('image')}</div>`;
+    const children = entry.isDirectory && entry.previewChildren?.length ? `<div class="preview-children">${entry.previewChildren.map(escapeHtml).join(' · ')}</div>` : '';
+    elements.hoverPreview.innerHTML = `${media}<strong>${escapeHtml(entry.name)}</strong><span>${escapeHtml(entry.kind)} · ${escapeHtml(formatDate(entry.modified))} · ${escapeHtml(entry.folderSizeStatus === 'loading' ? '计算中…' : formatSize(entry.size))}</span>${children}`;
+    elements.hoverPreview.hidden = false;
+    const rect = previewIcon.getBoundingClientRect();
+    const box = elements.hoverPreview.getBoundingClientRect();
+    const left = Math.max(12, Math.min(window.innerWidth - box.width - 12, rect.right + 10));
+    const top = Math.max(12, Math.min(window.innerHeight - box.height - 12, rect.top - 16));
+    elements.hoverPreview.style.left = `${left}px`;
+    elements.hoverPreview.style.top = `${top}px`;
+  }, 400);
+});
+
+elements.panes.addEventListener('mouseout', (event) => {
+  const previewIcon = event.target.closest('[data-preview-icon]');
+  if (previewIcon && !previewIcon.contains(event.relatedTarget)) hideHoverPreview();
+});
+
+elements.panes.addEventListener('scroll', hideHoverPreview, true);
 
 elements.panes.addEventListener('dblclick', async (event) => {
   const row = event.target.closest('.file-row');

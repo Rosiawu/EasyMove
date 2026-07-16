@@ -5,16 +5,18 @@ const path = require('node:path');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
 const { FolderSizeService } = require('./folder-size-service');
+const { ThumbnailService } = require('./thumbnail-service');
 
 const operations = new Map();
 const folderSizes = new FolderSizeService();
+let thumbnails = null;
 let mainWindow = null;
 
 app.setAppUserModelId('com.easymove.app');
-protocol.registerSchemesAsPrivileged([{
-  scheme: 'easymove-theme',
+protocol.registerSchemesAsPrivileged(['easymove-theme', 'easymove-thumb'].map((scheme) => ({
+  scheme,
   privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
-}]);
+})));
 
 function customThemeDirectory() {
   return path.join(app.getPath('userData'), 'themes');
@@ -99,6 +101,19 @@ function registerThemeProtocol() {
     if (!theme) return new Response('No custom theme', { status: 404 });
     return net.fetch(pathToFileURL(theme.filePath).href);
   });
+}
+
+function registerThumbnailProtocol() {
+  protocol.handle('easymove-thumb', async (request) => {
+    const key = new URL(request.url).hostname;
+    const filePath = thumbnails?.pathForKey(key);
+    return filePath ? net.fetch(pathToFileURL(filePath).href) : new Response('Not found', { status: 404 });
+  });
+}
+
+function invalidateCaches() {
+  folderSizes.invalidate();
+  thumbnails?.invalidate();
 }
 
 function createWindow() {
@@ -186,7 +201,9 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+  thumbnails = new ThumbnailService({ cacheDirectory: path.join(app.getPath('cache'), 'EasyMove', 'thumbnails') });
   registerThemeProtocol();
+  registerThumbnailProtocol();
   buildMenu();
   registerIpc();
   createWindow();
@@ -448,7 +465,7 @@ async function runTransfer(sender, operation, sources, targetDirectory, mode) {
       errors: error.code === 'EASYMOVE_CANCELLED' ? [] : [error.message]
     });
   } finally {
-    folderSizes.invalidate();
+    invalidateCaches();
     operations.delete(operation.id);
   }
 }
@@ -505,11 +522,20 @@ function registerIpc() {
 
   ipcMain.handle('fs:folder-sizes', async (_event, paths) => folderSizes.measure(paths || []));
 
+  ipcMain.handle('fs:preview', async (_event, itemPath) => {
+    try {
+      const preview = await thumbnails.describe(path.resolve(itemPath));
+      return { ...preview, url: preview.thumbnail ? `easymove-thumb://${preview.thumbnail}/preview.png` : null };
+    } catch (error) {
+      return { url: null, folderCover: false, children: [], error: error.code || 'UNAVAILABLE' };
+    }
+  });
+
   ipcMain.handle('fs:create-folder', async (_event, directory) => {
     const targetDirectory = normalizeDirectory(directory);
     const destination = uniqueDestination(targetDirectory, '未命名文件夹');
     await fsp.mkdir(destination);
-    folderSizes.invalidate();
+    invalidateCaches();
     return destination;
   });
 
@@ -520,7 +546,7 @@ function registerIpc() {
     const destination = path.join(path.dirname(source), cleanName);
     if (fs.existsSync(destination)) throw new Error('同名文件已经存在');
     await fsp.rename(source, destination);
-    folderSizes.invalidate();
+    invalidateCaches();
     return destination;
   });
 
@@ -533,7 +559,7 @@ function registerIpc() {
         errors.push(`${path.basename(item)}：${error.message}`);
       }
     }
-    folderSizes.invalidate();
+    invalidateCaches();
     return { success: errors.length === 0, errors };
   });
 

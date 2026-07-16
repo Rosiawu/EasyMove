@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: easymove-theme:; style-src 'self'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: easymove-theme: easymove-thumb:; style-src 'self'; script-src 'self'">
   <title>EasyMove</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -43,7 +43,7 @@
     <header class="titlebar">
       <div class="brand">
         <span class="brand-mark"><span></span></span>
-        <span class="brand-name">EasyMove <small>0.1.4</small></span>
+        <span class="brand-name">EasyMove <small>0.2.0</small></span>
         <svg class="brand-flower"><use href="#i-bloom"/></svg>
       </div>
 
@@ -137,6 +137,8 @@
       </form>
     </div>
   </main>
+  <div class="hover-preview" id="hoverPreview" hidden></div>
+  <script src="../sort-utils.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
