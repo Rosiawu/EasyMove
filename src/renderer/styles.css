@@ -209,6 +209,8 @@ svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.75
 .file-row[draggable="true"]:active { cursor:grabbing; }
 .file-row td { height:33px; padding:0 8px; color:var(--ink-500); font-size:9px; border-bottom:1px solid rgba(112,117,143,.09); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .file-row td:last-child { text-align:right; }
+.size-cell { font-variant-numeric:tabular-nums; }
+.size-cell.calculating { color:var(--ink-400); font-size:8px; }
 .file-row:hover td { background:rgba(255,255,255,.34); }
 .file-row.selected td { color:var(--accent-950); background:var(--selected); }
 .file-row.cut td { opacity:.48; }

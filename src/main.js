@@ -4,8 +4,10 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
+const { FolderSizeService } = require('./folder-size-service');
 
 const operations = new Map();
+const folderSizes = new FolderSizeService();
 let mainWindow = null;
 
 app.setAppUserModelId('com.easymove.app');
@@ -196,6 +198,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+app.on('before-quit', () => folderSizes.close().catch(() => {}));
 
 function normalizeDirectory(input) {
   const resolved = path.resolve(String(input || os.homedir()));
@@ -444,6 +448,7 @@ async function runTransfer(sender, operation, sources, targetDirectory, mode) {
       errors: error.code === 'EASYMOVE_CANCELLED' ? [] : [error.message]
     });
   } finally {
+    folderSizes.invalidate();
     operations.delete(operation.id);
   }
 }
@@ -498,10 +503,13 @@ function registerIpc() {
     return { path: directory, entries: await getDirectoryEntries(directory, request.showHidden) };
   });
 
+  ipcMain.handle('fs:folder-sizes', async (_event, paths) => folderSizes.measure(paths || []));
+
   ipcMain.handle('fs:create-folder', async (_event, directory) => {
     const targetDirectory = normalizeDirectory(directory);
     const destination = uniqueDestination(targetDirectory, '未命名文件夹');
     await fsp.mkdir(destination);
+    folderSizes.invalidate();
     return destination;
   });
 
@@ -512,6 +520,7 @@ function registerIpc() {
     const destination = path.join(path.dirname(source), cleanName);
     if (fs.existsSync(destination)) throw new Error('同名文件已经存在');
     await fsp.rename(source, destination);
+    folderSizes.invalidate();
     return destination;
   });
 
@@ -524,6 +533,7 @@ function registerIpc() {
         errors.push(`${path.basename(item)}：${error.message}`);
       }
     }
+    folderSizes.invalidate();
     return { success: errors.length === 0, errors };
   });
 

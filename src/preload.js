@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('easyMove', {
   chooseCustomTheme: () => ipcRenderer.invoke('theme:choose-custom'),
   chooseFolder: () => ipcRenderer.invoke('dialog:choose-folder'),
   listDirectory: (path, showHidden = false) => ipcRenderer.invoke('fs:list', { path, showHidden }),
+  folderSizes: (paths) => ipcRenderer.invoke('fs:folder-sizes', paths),
   createFolder: (path) => ipcRenderer.invoke('fs:create-folder', path),
   rename: (path, name) => ipcRenderer.invoke('fs:rename', { path, name }),
   trash: (paths) => ipcRenderer.invoke('fs:trash', paths),

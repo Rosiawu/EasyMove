@@ -70,7 +70,7 @@ function showToast(message, title = 'EasyMove') {
 }
 
 function formatSize(bytes) {
-  if (!bytes) return '—';
+  if (bytes === null || bytes === undefined) return '—';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let value = bytes;
   let unit = 0;
@@ -134,7 +134,10 @@ async function loadPane(index, targetPath, options = {}) {
     const result = await api.listDirectory(targetPath, pane.showHidden);
     if (pane.loadToken !== token) return;
     pane.path = result.path;
-    pane.entries = result.entries;
+    pane.entries = result.entries.map((entry) => ({
+      ...entry,
+      folderSizeStatus: entry.isDirectory ? 'loading' : 'ready'
+    }));
     pane.loading = false;
     pane.error = '';
     if (options.pushHistory !== false && pane.history[pane.historyIndex] !== result.path) {
@@ -144,6 +147,25 @@ async function loadPane(index, targetPath, options = {}) {
     }
     if (index === state.activePane) elements.globalSearch.value = pane.filter;
     renderAll();
+
+    const directories = pane.entries.filter((entry) => entry.isDirectory).map((entry) => entry.path);
+    if (directories.length) {
+      try {
+        const sizes = await api.folderSizes(directories);
+        if (pane.loadToken !== token) return;
+        const sizeMap = new Map(sizes.map((item) => [item.path, item.size]));
+        pane.entries = pane.entries.map((entry) => {
+          if (!entry.isDirectory) return entry;
+          const size = sizeMap.get(entry.path);
+          return { ...entry, size: size ?? null, folderSizeStatus: Number.isFinite(size) ? 'ready' : 'unavailable' };
+        });
+        renderAll();
+      } catch {
+        if (pane.loadToken !== token) return;
+        pane.entries = pane.entries.map((entry) => entry.isDirectory ? { ...entry, size: null, folderSizeStatus: 'unavailable' } : entry);
+        renderAll();
+      }
+    }
   } catch (error) {
     if (pane.loadToken !== token) return;
     pane.loading = false;
@@ -186,7 +208,7 @@ function renderPane(pane) {
       <td><div class="file-name"><span class="file-icon${entry.isDirectory ? '' : ' file'}">${fileIcon}</span><span>${escapeHtml(entry.name)}</span></div></td>
       <td>${escapeHtml(entry.kind)}</td>
       <td>${escapeHtml(formatDate(entry.modified))}</td>
-      <td>${entry.isDirectory ? '—' : escapeHtml(formatSize(entry.size))}</td>
+      <td class="size-cell${entry.folderSizeStatus === 'loading' ? ' calculating' : ''}">${entry.folderSizeStatus === 'loading' ? '计算中…' : escapeHtml(formatSize(entry.size))}</td>
     </tr>`;
   }).join('');
 
@@ -195,7 +217,7 @@ function renderPane(pane) {
   else if (pane.error) content = `<div class="empty-state"><div>${icon('close')}<br>${escapeHtml(pane.error)}</div></div>`;
   else if (!entries.length) content = `<div class="empty-state"><div>${icon('bloom')}<br>${pane.filter ? '没有匹配的文件' : '这个文件夹是空的'}</div></div>`;
 
-  const selectedSize = pane.entries.filter((entry) => pane.selection.has(entry.path) && !entry.isDirectory).reduce((sum, entry) => sum + entry.size, 0);
+  const selectedSize = pane.entries.filter((entry) => pane.selection.has(entry.path) && entry.folderSizeStatus === 'ready').reduce((sum, entry) => sum + entry.size, 0);
   return `<section class="pane${pane.id === state.activePane ? ' active' : ''}" data-pane="${pane.id}">
     <div class="pane-tabs"><div class="pane-tab">${icon('folder')}<span>${escapeHtml(basename(pane.path) || pane.path)}</span></div></div>
     <div class="pane-address">
@@ -243,7 +265,7 @@ function renderSelectionSummary() {
     return;
   }
   const selectedEntries = pane.entries.filter((entry) => pane.selection.has(entry.path));
-  const size = selectedEntries.filter((entry) => !entry.isDirectory).reduce((sum, entry) => sum + entry.size, 0);
+  const size = selectedEntries.filter((entry) => entry.folderSizeStatus === 'ready').reduce((sum, entry) => sum + entry.size, 0);
   elements.selectionSummary.textContent = `已选择 ${pane.selection.size} 项${size ? ` · ${formatSize(size)}` : ''}`;
 }
 
@@ -268,7 +290,7 @@ function syncPaneInteractionState() {
     const status = paneElement.querySelector('.pane-status');
     if (status) {
       const selectedSize = pane.entries
-        .filter((entry) => pane.selection.has(entry.path) && !entry.isDirectory)
+        .filter((entry) => pane.selection.has(entry.path) && entry.folderSizeStatus === 'ready')
         .reduce((sum, entry) => sum + entry.size, 0);
       status.children[0].textContent = pane.selection.size ? `已选择 ${pane.selection.size} 项` : `${pane.entries.length} 个项目`;
       status.children[1].textContent = selectedSize ? formatSize(selectedSize) : pane.path;
