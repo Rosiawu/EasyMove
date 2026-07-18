@@ -260,6 +260,9 @@ svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.75
 .hover-preview>img,.preview-fallback { width:276px; height:190px; display:grid; place-items:center; margin-bottom:10px; object-fit:contain; border-radius:5px; background:#f1f3f6; }
 .preview-fallback svg { width:64px; height:64px; color:var(--accent-700); }
 .hover-preview strong,.hover-preview span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hover-preview .preview-text { max-height:72px; margin:0 0 8px; overflow:hidden; color:var(--ink-700); font-size:10px; line-height:1.45; white-space:pre-wrap; }
+.hover-preview .preview-fallback { padding:14px; text-align:center; }
+.hover-preview .preview-fallback strong { white-space:normal; }
 .hover-preview strong { font-size:13px; }
 .hover-preview span,.preview-children { margin-top:4px; color:var(--ink-500); font-size:10px; }
 .preview-children { line-height:1.45; white-space:normal; }

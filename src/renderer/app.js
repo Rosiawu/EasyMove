@@ -163,7 +163,7 @@ async function loadPane(index, targetPath, options = {}) {
     const previewMap = new Map(previewResults.map((preview) => [preview.path, preview]));
     pane.entries = pane.entries.map((entry) => {
       const preview = previewMap.get(entry.path);
-      return { ...entry, previewStatus: 'ready', previewUrl: preview?.url || null, folderCover: Boolean(preview?.folderCover), previewChildren: preview?.children || [] };
+      return { ...entry, previewStatus: 'ready', previewUrl: preview?.url || null, previewKind: preview?.previewKind || null, previewText: preview?.previewText || null, previewError: preview?.error || null, folderCover: Boolean(preview?.folderCover), previewChildren: preview?.children || [] };
     });
     renderAll();
 
@@ -701,9 +701,10 @@ elements.panes.addEventListener('mouseover', (event) => {
   const token = ++state.hoverToken;
   state.hoverTimer = setTimeout(() => {
     if (token !== state.hoverToken || !previewIcon.isConnected) return;
-    const media = entry.previewUrl ? `<img src="${escapeHtml(entry.previewUrl)}" alt="">` : `<div class="preview-fallback">${entry.isDirectory ? icon('folder') : icon('image')}</div>`;
+    const media = entry.previewUrl ? `<img src="${escapeHtml(entry.previewUrl)}" alt="真实内容预览">` : entry.previewText ? `<div class="preview-fallback preview-content"><strong>真实内容</strong><span>${escapeHtml(entry.previewText.slice(0, 620))}</span></div>` : `<div class="preview-fallback"><strong>无法生成内容预览</strong><span>${escapeHtml(entry.previewError || '文件消失、权限不足、损坏或格式未支持')}</span></div>`;
+    const content = entry.previewText ? `<div class="preview-text">${escapeHtml(entry.previewText.slice(0, 260))}</div>` : '';
     const children = entry.isDirectory && entry.previewChildren?.length ? `<div class="preview-children">${entry.previewChildren.map(escapeHtml).join(' · ')}</div>` : '';
-    elements.hoverPreview.innerHTML = `${media}<strong>${escapeHtml(entry.name)}</strong><span>${escapeHtml(entry.kind)} · ${escapeHtml(formatDate(entry.modified))} · ${escapeHtml(entry.folderSizeStatus === 'loading' ? '计算中…' : formatSize(entry.size))}</span>${children}`;
+    elements.hoverPreview.innerHTML = `${media}${content}<strong>${escapeHtml(entry.name)}</strong><span>${escapeHtml(entry.kind)} · ${escapeHtml(formatDate(entry.modified))} · ${escapeHtml(entry.folderSizeStatus === 'loading' ? '计算中…' : formatSize(entry.size))}</span>${children}`;
     elements.hoverPreview.hidden = false;
     const rect = previewIcon.getBoundingClientRect();
     const box = elements.hoverPreview.getBoundingClientRect();

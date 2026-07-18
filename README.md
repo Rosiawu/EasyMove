@@ -1,4 +1,4 @@
-# EasyMove 0.2.0
+# EasyMove 0.2.1
 
 EasyMove 是一款面向 Windows 与 macOS 的多窗格文件管理器。它把复制、移动、剪切和粘贴放在界面中心，同时保留克制、通透的水彩气质。
 
@@ -10,8 +10,9 @@ EasyMove 是一款面向 Windows 与 macOS 的多窗格文件管理器。它把�
 - 多选文件，复制、剪切、粘贴、移动到另一窗格、重命名、新建文件夹
 - 后台递归计算文件夹内部所有文件的总大小，目录切换和刷新不会被旧结果污染
 - 每个窗格独立按名称、类型、修改时间或大小排序，文件夹始终优先，设置在路径切换与刷新后保留
-- 图片显示真实缩略图；图片文件夹以自然名称顺序的第一张直接子图片作为封面
-- macOS 通过 Quick Look 预览 PDF 首页、视频缩略帧及系统支持的文档，无法生成时回退类型图标
+- 图片显示真实缩略图；文件夹以自然名称顺序的第一份可预览内容作为封面
+- macOS 通过 Quick Look 预览 PDF 首页和视频帧；TXT/Markdown 与 DOCX/PPTX/XLSX 生成包含真实文字或单元格内容的预览卡
+- 预览失败时明确显示“无法生成内容预览”和原因，不使用类型图标冒充内容
 - 悬停文件或文件夹图标 400ms 显示大图、元数据和文件夹前五项，快速切换不会串项
 - 像 Windows 文件管理器一样拖放：同盘默认移动、跨盘默认复制，可直接拖到另一窗格或具体文件夹
 - 支持从 Finder/Explorer 将文件或文件夹直接拖入 EasyMove
@@ -89,6 +90,19 @@ npm run dist:win
 EasyMove 使用 Electron 构建，界面运行于隔离的渲染进程中：`contextIsolation` 已开启、`nodeIntegration` 已关闭、沙箱已开启。文件系统能力只通过预加载层中明确列出的 API 暴露给界面。
 
 所有文件操作都在本机完成。自然声由 Web Audio 实时合成，不需要网络请求或音频素材。
+
+## 0.2.1 支持矩阵与已知限制
+
+| 格式 | macOS 预览 | Windows 预览 | 内容验证方式 |
+| --- | --- | --- | --- |
+| JPEG/PNG/GIF/WebP | 支持 | 支持 | 安全解码、真实像素缩略图 |
+| MP4/MOV | Quick Look 视频帧 | 不支持 | Quick Look 输出帧 |
+| PDF | Quick Look 首页 | 不支持 | Quick Look 页面图像 |
+| TXT/Markdown | 支持 | 支持 | 真实文本预览卡 |
+| DOCX/PPTX/XLSX | 文字内容 fallback；Quick Look 可用时优先 | 文字内容 fallback | OOXML XML 内容提取 |
+| Pages/Keynote/Numbers、旧 DOC/PPT/XLS | 依赖系统 Quick Look | 不支持 | 失败时明确不可预览 |
+
+Quick Look 的覆盖范围仍取决于 macOS 版本与已安装预览生成器；权限不足、损坏、消失、超大或超时文件会显示明确失败状态。当前没有把文件类型图标算作内容预览。
 
 ## 0.2 已知限制
 
