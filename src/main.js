@@ -105,9 +105,17 @@ function registerThemeProtocol() {
 
 function registerThumbnailProtocol() {
   protocol.handle('easymove-thumb', async (request) => {
-    const key = new URL(request.url).hostname;
-    const filePath = thumbnails?.pathForKey(key);
-    return filePath ? net.fetch(pathToFileURL(filePath).href) : new Response('Not found', { status: 404 });
+    try {
+      const requestUrl = new URL(request.url);
+      const key = requestUrl.pathname.split('/').filter(Boolean)[0] || requestUrl.hostname;
+      const filePath = thumbnails?.pathForKey(key);
+      if (!filePath) return new Response('Thumbnail not found', { status: 404 });
+      const bytes = await fsp.readFile(filePath);
+      return new Response(bytes, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=31536000, immutable' } });
+    } catch (error) {
+      console.error('[preview:protocol]', { code: error.code || 'PROTOCOL', message: error.message });
+      return new Response('Thumbnail protocol error', { status: 500 });
+    }
   });
 }
 
@@ -525,9 +533,11 @@ function registerIpc() {
   ipcMain.handle('fs:preview', async (_event, itemPath) => {
     try {
       const preview = await thumbnails.describe(path.resolve(itemPath));
-      return { ...preview, url: preview.thumbnail ? `easymove-thumb://${preview.thumbnail}/preview.png` : null };
+      return { ...preview, url: preview.thumbnail ? `easymove-thumb://cache/${preview.thumbnail}/preview.png` : null };
     } catch (error) {
-      return { url: null, folderCover: false, children: [], error: error.code || 'UNAVAILABLE' };
+      const code = error.previewCode || error.code || 'UNAVAILABLE';
+      console.error('[preview:ipc]', { code, pathHash: require('node:crypto').createHash('sha256').update(String(itemPath)).digest('hex').slice(0, 12), message: error.message });
+      return { url: null, folderCover: false, children: [], error: code };
     }
   });
 

@@ -121,7 +121,12 @@ function makePane(id, path) {
     showHidden: false,
     loadToken: 0,
     anchorPath: null,
-    sort: { field: 'name', direction: 'asc' }
+    sort: { field: 'name', direction: 'asc' },
+    viewMode: localStorage.getItem(`easymove-pane-${id}-view`) || 'list',
+    columnPath: null,
+    columnEntries: [],
+    columnLoading: false,
+    columnToken: 0
   };
 }
 
@@ -138,6 +143,9 @@ async function loadPane(index, targetPath, options = {}) {
     const result = await api.listDirectory(targetPath, pane.showHidden);
     if (pane.loadToken !== token) return;
     pane.path = result.path;
+    localStorage.setItem(`easymove-pane-${pane.id}-path`, pane.path);
+    pane.columnPath = null;
+    pane.columnEntries = [];
     pane.entries = result.entries.map((entry) => ({
       ...entry,
       folderSizeStatus: entry.isDirectory ? 'loading' : 'ready',
@@ -222,6 +230,31 @@ function sortIndicator(pane, field) {
   return `<span class="sort-indicator" aria-hidden="true">${pane.sort.direction === 'asc' ? '↑' : '↓'}</span>`;
 }
 
+const viewModes = [['icon', '图标视图', 'view-icon'], ['list', '列表视图', 'view-list'], ['column', '分栏视图', 'view-column'], ['gallery', '画廊视图', 'view-gallery']];
+
+function itemMarkup(pane, entry, extraClass = '') {
+  const selected = pane.selection.has(entry.path) ? ' selected' : '';
+  const cut = state.clipboard?.mode === 'move' && state.clipboard.paths.includes(entry.path) ? ' cut' : '';
+  const fallback = entry.isDirectory ? icon('folder') : icon('image');
+  const thumbnail = entry.previewUrl ? `<img src="${escapeHtml(entry.previewUrl)}" alt="">` : fallback;
+  return `<div class="file-row ${extraClass}${selected}${cut}" data-pane="${pane.id}" data-path="${encodePath(entry.path)}" draggable="true" tabindex="0" aria-selected="${pane.selection.has(entry.path)}" title="${escapeHtml(entry.name)}"><span class="file-icon${entry.isDirectory ? (entry.folderCover ? ' folder-cover' : '') : ' file'}" data-preview-icon>${thumbnail}</span><span class="item-name">${escapeHtml(entry.name)}</span><span class="item-kind">${escapeHtml(entry.kind)}</span><span class="item-date">${escapeHtml(formatDate(entry.modified))}</span><span class="item-size">${entry.folderSizeStatus === 'loading' ? '计算中…' : escapeHtml(formatSize(entry.size))}</span></div>`;
+}
+
+function viewControls(pane) {
+  return `<div class="view-switch" role="radiogroup" aria-label="窗格视图">${viewModes.map(([mode, label, iconName]) => `<button class="view-button${pane.viewMode === mode ? ' active' : ''}" data-view-mode="${mode}" data-pane="${pane.id}" role="radio" aria-checked="${pane.viewMode === mode}" aria-label="${label}" title="${label}">${icon(iconName)}</button>`).join('')}</div>`;
+}
+
+function previewMarkup(entry, large = false) {
+  if (!entry) return `<div class="preview-empty">选择一个项目</div>`;
+  if (entry.previewUrl) return `<img class="content-preview${large ? ' large' : ''}" src="${escapeHtml(entry.previewUrl)}" alt="${escapeHtml(entry.name)} 预览">`;
+  if (entry.previewText) return `<div class="preview-document">${escapeHtml(entry.previewText.slice(0, 1800))}</div>`;
+  return `<div class="preview-error"><strong>无法预览</strong><span>${escapeHtml(previewErrorMessage(entry.previewError))}</span><button data-open-path="${encodePath(entry.path)}">用系统应用打开</button><button data-retry-preview="${encodePath(entry.path)}">重试</button></div>`;
+}
+
+function previewErrorMessage(code) {
+  return ({ ENOENT: '文件已不存在', EACCES: '没有文件读取权限', EPERM: 'macOS 阻止了访问', DECODE_FAILED: '图片解码失败', QUICK_LOOK_TIMEOUT: 'Quick Look 生成超时', QUICK_LOOK_FAILED: 'Quick Look 无法生成预览', PROTOCOL: '缩略图协议读取失败' })[code] || '此格式暂时无法生成内容预览';
+}
+
 function renderPane(pane) {
   const entries = filteredEntries(pane);
   const rows = entries.map((entry) => {
@@ -239,6 +272,16 @@ function renderPane(pane) {
 
   const header = (field, label) => `<button class="sort-button" data-sort="${field}" data-pane="${pane.id}" aria-label="按${label}排序，当前${pane.sort.field === field ? (pane.sort.direction === 'asc' ? '升序' : '降序') : '未排序'}">${label}${sortIndicator(pane, field)}</button>`;
   let content = `<table class="file-table"><thead><tr><th>${header('name', '名称')}</th><th>${header('type', '类型')}</th><th>${header('modified', '修改时间')}</th><th>${header('size', '大小')}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  if (pane.viewMode === 'icon') content = `<div class="icon-grid">${entries.map((entry) => itemMarkup(pane, entry, 'icon-item')).join('')}</div>`;
+  if (pane.viewMode === 'column') {
+    const child = pane.columnLoading ? `<div class="column-state">正在读取…</div>` : pane.columnPath ? pane.columnEntries.map((entry) => itemMarkup(pane, entry, 'column-item')).join('') || `<div class="column-state">文件夹为空</div>` : `<div class="column-state">选择文件夹以展开下一栏</div>`;
+    const selected = pane.entries.find((entry) => pane.selection.has(entry.path) && !entry.isDirectory);
+    content = `<div class="column-browser"><div class="column">${entries.map((entry) => itemMarkup(pane, entry, 'column-item')).join('')}</div><div class="column">${child}</div>${selected ? `<div class="column column-preview">${previewMarkup(selected, true)}<strong>${escapeHtml(selected.name)}</strong><span>${escapeHtml(selected.kind)} · ${escapeHtml(formatSize(selected.size))}</span></div>` : ''}</div>`;
+  }
+  if (pane.viewMode === 'gallery') {
+    const selected = entries.find((entry) => pane.selection.has(entry.path)) || entries[0];
+    content = `<div class="gallery"><div class="gallery-stage">${previewMarkup(selected, true)}${selected ? `<strong>${escapeHtml(selected.name)}</strong><span>${escapeHtml(selected.kind)} · ${escapeHtml(formatSize(selected.size))}</span>` : ''}</div><div class="gallery-strip">${entries.map((entry) => itemMarkup(pane, entry, 'gallery-item')).join('')}</div></div>`;
+  }
   if (pane.loading) content = `<div class="empty-state"><div>${icon('refresh')}<br>正在读取文件夹…</div></div>`;
   else if (pane.error) content = `<div class="empty-state"><div>${icon('close')}<br>${escapeHtml(pane.error)}</div></div>`;
   else if (!entries.length) content = `<div class="empty-state"><div>${icon('bloom')}<br>${pane.filter ? '没有匹配的文件' : '这个文件夹是空的'}</div></div>`;
@@ -253,7 +296,8 @@ function renderPane(pane) {
         <button class="mini-button" data-pane-action="up" data-pane="${pane.id}" title="上一级">${icon('up')}</button>
       </div>
       <input class="path-input" data-pane="${pane.id}" value="${escapeHtml(pane.path)}" aria-label="当前路径">
-      <button class="mini-button" data-pane-action="refresh" data-pane="${pane.id}" title="刷新">${icon('refresh')}</button>
+      ${viewControls(pane)}
+      <button class="mini-button" data-pane-action="refresh" data-pane="${pane.id}" title="刷新" aria-label="刷新">${icon('refresh')}</button>
     </div>
     <div class="file-list">${content}</div>
     <div class="pane-status"><span>${pane.selection.size ? `已选择 ${pane.selection.size} 项` : `${pane.entries.length} 个项目`}</span><span>${selectedSize ? formatSize(selectedSize) : escapeHtml(pane.path)}</span></div>
@@ -654,7 +698,26 @@ window.addEventListener('drop', (event) => {
   }
 });
 
-elements.panes.addEventListener('click', (event) => {
+elements.panes.addEventListener('click', async (event) => {
+  const viewButton = event.target.closest('[data-view-mode]');
+  if (viewButton) {
+    const pane = state.panes[Number(viewButton.dataset.pane)];
+    pane.viewMode = viewButton.dataset.viewMode;
+    localStorage.setItem(`easymove-pane-${pane.id}-view`, pane.viewMode);
+    renderPanes();
+    return;
+  }
+  const openButton = event.target.closest('[data-open-path]');
+  if (openButton) { await api.open(decodePath(openButton.dataset.openPath)); return; }
+  const retryButton = event.target.closest('[data-retry-preview]');
+  if (retryButton) {
+    const filePath = decodePath(retryButton.dataset.retryPreview);
+    const pane = state.panes.find((item) => item.entries.some((entry) => entry.path === filePath));
+    const entry = pane?.entries.find((item) => item.path === filePath);
+    if (entry) Object.assign(entry, await api.preview(filePath));
+    renderAll();
+    return;
+  }
   const sortButton = event.target.closest('[data-sort]');
   if (sortButton) {
     const pane = state.panes[Number(sortButton.dataset.pane)];
@@ -665,7 +728,28 @@ elements.panes.addEventListener('click', (event) => {
   }
   const row = event.target.closest('.file-row');
   if (row) {
-    selectRow(Number(row.dataset.pane), decodePath(row.dataset.path), event);
+    const paneIndex = Number(row.dataset.pane);
+    const filePath = decodePath(row.dataset.path);
+    const pane = state.panes[paneIndex];
+    selectRow(paneIndex, filePath, event);
+    const entry = [...pane.entries, ...pane.columnEntries].find((item) => item.path === filePath);
+    if (pane.viewMode === 'column' && entry?.isDirectory) {
+      const token = ++pane.columnToken;
+      pane.columnPath = entry.path;
+      pane.columnLoading = true;
+      renderPanes();
+      try {
+        const result = await api.listDirectory(entry.path, pane.showHidden);
+        if (pane.columnToken !== token) return;
+        pane.columnEntries = await Promise.all(result.entries.map(async (item) => ({ ...item, folderSizeStatus: 'ready', ...(await api.preview(item.path)) })));
+      } catch (error) {
+        if (pane.columnToken !== token) return;
+        pane.columnEntries = [];
+        showToast(error.message || String(error), '无法展开文件夹');
+      }
+      pane.columnLoading = false;
+      renderPanes();
+    } else renderPanes();
     return;
   }
   const action = event.target.closest('[data-pane-action]');
@@ -1058,10 +1142,10 @@ async function initialize() {
     const usableTheme = savedTheme === 'theme-custom' && !state.customTheme?.url ? 'theme-blue-mist' : savedTheme;
     if (usableTheme && themeNames[usableTheme]) applyTheme(usableTheme, false);
     state.panes = [
-      makePane(0, state.locations.home),
-      makePane(1, state.locations.downloads),
-      makePane(2, state.locations.desktop),
-      makePane(3, state.locations.documents)
+      makePane(0, localStorage.getItem('easymove-pane-0-path') || state.locations.home),
+      makePane(1, localStorage.getItem('easymove-pane-1-path') || state.locations.downloads),
+      makePane(2, localStorage.getItem('easymove-pane-2-path') || state.locations.desktop),
+      makePane(3, localStorage.getItem('easymove-pane-3-path') || state.locations.documents)
     ];
     elements.pauseTransfer.disabled = true;
     elements.cancelTransfer.disabled = true;

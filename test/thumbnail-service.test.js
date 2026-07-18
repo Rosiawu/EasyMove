@@ -3,9 +3,21 @@ const assert = require('node:assert/strict');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { ThumbnailService } = require('../src/thumbnail-service');
+const { ThumbnailService, containedSize } = require('../src/thumbnail-service');
 
 async function fixture() { return fsp.mkdtemp(path.join(os.tmpdir(), 'easymove-thumb-test-')); }
+
+test('thumbnail dimensions preserve landscape, portrait, panorama and square aspect ratios', () => {
+  const cases = [[1200, 800, { width: 512 }], [800, 1200, { height: 512 }], [3200, 400, { width: 512 }], [900, 900, { width: 512 }]];
+  for (const [width, height, expected] of cases) {
+    const resized = containedSize({ getSize: () => ({ width, height }) });
+    assert.deepEqual(resized, expected);
+    const outputWidth = resized.width || width * (resized.height / height);
+    const outputHeight = resized.height || height * (resized.width / width);
+    assert.ok(Math.abs((outputWidth / outputHeight) / (width / height) - 1) < 0.01);
+  }
+  assert.equal(containedSize({ getSize: () => ({ width: 200, height: 400 }) }), null);
+});
 
 test('folder cover is the first directly contained image in natural name order', async (t) => {
   const root = await fixture(); t.after(() => fsp.rm(root, { recursive: true, force: true }));
@@ -50,6 +62,21 @@ test('queue enforces concurrency and coalesces identical cache requests', async 
   }));
   assert.ok((await Promise.all(jobs)).every(Boolean));
   assert.equal(maximum, 2);
+});
+
+test('real PNG thumbnails survive desktop-style complex paths', async (t) => {
+  const root = await fixture(); t.after(() => fsp.rm(root, { recursive: true, force: true }));
+  const directory = path.join(root, 'Desktop 风格', '下载 (测试) #100%');
+  await fsp.mkdir(directory, { recursive: true });
+  const source = path.join(directory, `${'很长的文件名'.repeat(12)} # 50%.png`);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  await fsp.writeFile(source, png);
+  const service = new ThumbnailService({ cacheDirectory: path.join(root, '缓存 空间') });
+  service.generate = async (input, destination) => { await fsp.mkdir(path.dirname(destination), { recursive: true }); await fsp.copyFile(input, destination); return { kind: 'image' }; };
+  const result = await service.get(source);
+  assert.equal(result?.kind, 'image');
+  assert.match(result?.key || '', /^[a-f0-9]{64}$/);
+  assert.equal((await fsp.stat(service.pathForKey(result.key))).size > 0, true);
 });
 
 test('pathForKey rejects traversal and only serves existing cache files', async (t) => {

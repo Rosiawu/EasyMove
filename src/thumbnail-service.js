@@ -13,6 +13,11 @@ const PDF_EXTENSIONS = new Set(['.pdf']);
 const QUICK_LOOK_EXTENSIONS = new Set([...VIDEO_EXTENSIONS, ...PDF_EXTENSIONS, ...TEXT_EXTENSIONS, ...OFFICE_EXTENSIONS]);
 
 function naturalCompare(a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); }
+function containedSize(image, maximum = 512) {
+  const { width, height } = image.getSize();
+  if (!width || !height || Math.max(width, height) <= maximum) return null;
+  return width >= height ? { width: maximum } : { height: maximum };
+}
 function xmlText(value) { return String(value).replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim(); }
 function cardSvg(title, body, accent = '#52677f') {
   const esc = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -64,7 +69,8 @@ class ThumbnailService {
   async writeCard(destination, title, body) {
     const image = nativeImage.createFromBuffer(Buffer.from(cardSvg(title, body)));
     if (image.isEmpty()) return null;
-    await fsp.writeFile(destination, image.resize({ width: 512, height: 512, quality: 'good' }).toPNG()); return { kind: 'content', text: body };
+    const size = containedSize(image);
+    await fsp.writeFile(destination, (size ? image.resize({ ...size, quality: 'good' }) : image).toPNG()); return { kind: 'content', text: body };
   }
   async zipText(source, member) {
     return new Promise((resolve) => execFile('/usr/bin/unzip', ['-p', source, member], { timeout: this.timeout, maxBuffer: 2 * 1024 * 1024 }, (error, stdout) => resolve(error ? '' : stdout)));
@@ -73,18 +79,29 @@ class ThumbnailService {
     if (process.platform !== 'darwin') return null;
     const temporary = await fsp.mkdtemp(path.join(this.cacheDirectory, 'ql-'));
     try {
-      await new Promise((resolve, reject) => execFile('/usr/bin/qlmanage', ['-t', '-s', '512', '-o', temporary, source], { timeout: this.timeout }, (error) => error ? reject(error) : resolve()));
-      const output = (await fsp.readdir(temporary)).find((file) => file.endsWith('.png')); if (!output) return null;
-      const image = nativeImage.createFromPath(path.join(temporary, output)); if (image.isEmpty()) return null;
-      await fsp.rename(path.join(temporary, output), destination); return { kind };
+      await new Promise((resolve, reject) => execFile('/usr/bin/qlmanage', ['-t', '-s', '512', '-o', temporary, source], { timeout: this.timeout }, (error) => {
+        if (error) { error.previewCode = error.killed ? 'QUICK_LOOK_TIMEOUT' : 'QUICK_LOOK_FAILED'; reject(error); } else resolve();
+      }));
+      const output = (await fsp.readdir(temporary)).find((file) => file.toLowerCase().endsWith('.png'));
+      if (!output) return null;
+      const outputPath = path.join(temporary, output);
+      const image = nativeImage.createFromPath(outputPath); if (image.isEmpty()) return null;
+      await fsp.copyFile(outputPath, destination); return { kind };
     } finally { await fsp.rm(temporary, { recursive: true, force: true }).catch(() => {}); }
+  }
+  async sips(source, destination) {
+    if (process.platform !== 'darwin') return null;
+    return new Promise((resolve) => execFile('/usr/bin/sips', ['-s', 'format', 'png', '-Z', '512', source, '--out', destination], { timeout: this.timeout }, (error) => resolve(error ? null : { kind: 'image' })));
   }
   async generate(source, destination, extension) {
     await fsp.mkdir(this.cacheDirectory, { recursive: true });
     if (IMAGE_EXTENSIONS.has(extension)) {
       const image = nativeImage.createFromPath(source);
-      if (!image.isEmpty()) { await fsp.writeFile(destination, image.resize({ width: 512, height: 512, quality: 'good' }).toPNG()); return { kind: 'image' }; }
-      return this.quickLook(source, destination, 'image').catch(() => null);
+      if (!image.isEmpty()) {
+        const size = containedSize(image);
+        await fsp.writeFile(destination, (size ? image.resize({ ...size, quality: 'good' }) : image).toPNG()); return { kind: 'image' };
+      }
+      return (await this.sips(source, destination)) || this.quickLook(source, destination, 'image').catch(() => null);
     }
     if (TEXT_EXTENSIONS.has(extension)) {
       const quickLook = await this.quickLook(source, destination, 'content').catch(() => null); if (quickLook) return quickLook;
@@ -102,4 +119,4 @@ class ThumbnailService {
   pathForKey(key) { if (!/^[a-f0-9]{64}$/.test(String(key))) return null; const filePath = path.join(this.cacheDirectory, `${key}.png`); return fs.existsSync(filePath) ? filePath : null; }
   invalidate() { return fsp.rm(this.cacheDirectory, { recursive: true, force: true }).catch(() => {}); }
 }
-module.exports = { ThumbnailService, IMAGE_EXTENSIONS, QUICK_LOOK_EXTENSIONS, TEXT_EXTENSIONS, OFFICE_EXTENSIONS };
+module.exports = { ThumbnailService, IMAGE_EXTENSIONS, QUICK_LOOK_EXTENSIONS, TEXT_EXTENSIONS, OFFICE_EXTENSIONS, containedSize };
