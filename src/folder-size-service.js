@@ -1,3 +1,5 @@
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 
@@ -8,7 +10,9 @@ class FolderSizeService {
       `${path.sep}app.asar${path.sep}`,
       `${path.sep}app.asar.unpacked${path.sep}`
     );
-    this.ttlMs = options.ttlMs ?? 30_000;
+    this.ttlMs = options.ttlMs ?? 6 * 60 * 60 * 1000;
+    this.cacheFile = options.cacheFile || null;
+    this.persistTimer = null;
     this.cache = new Map();
     this.pending = new Map();
     this.nextId = 1;
@@ -18,6 +22,38 @@ class FolderSizeService {
     this.worker.on('exit', (code) => {
       if (code !== 0) this.handleFailure(new Error(`Folder size worker stopped with code ${code}`));
     });
+    this.loadPersistentCache();
+  }
+
+  loadPersistentCache() {
+    if (!this.cacheFile) return;
+    try {
+      const stored = JSON.parse(fs.readFileSync(this.cacheFile, 'utf8'));
+      for (const [itemPath, value] of Object.entries(stored.entries || {})) {
+        if (Number.isFinite(value?.size) && Number.isFinite(value?.cachedAt)) this.cache.set(itemPath, value);
+      }
+    } catch {
+      // A missing or damaged cache is equivalent to a cold start.
+    }
+  }
+
+  schedulePersist() {
+    if (!this.cacheFile || this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persist().catch(() => {});
+    }, 250);
+  }
+
+  async persist() {
+    if (!this.cacheFile) return;
+    const directory = path.dirname(this.cacheFile);
+    const temporary = `${this.cacheFile}.tmp`;
+    const entries = Object.fromEntries(Array.from(this.cache.entries()).slice(-5000));
+    await fsp.mkdir(directory, { recursive: true });
+    await fsp.writeFile(temporary, JSON.stringify({ version: 1, entries }));
+    await fsp.rm(this.cacheFile, { force: true });
+    await fsp.rename(temporary, this.cacheFile);
   }
 
   async measure(paths) {
@@ -38,11 +74,13 @@ class FolderSizeService {
       this.worker.postMessage({ id, paths: missing });
     });
     for (const result of measured) this.cache.set(result.path, { size: result.size, cachedAt: Date.now() });
+    this.schedulePersist();
     return results.concat(measured);
   }
 
   invalidate() {
     this.cache.clear();
+    this.schedulePersist();
   }
 
   handleMessage(message) {
@@ -59,6 +97,11 @@ class FolderSizeService {
   }
 
   async close() {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    await this.persist().catch(() => {});
     await this.worker.terminate();
   }
 }

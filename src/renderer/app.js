@@ -15,7 +15,8 @@ const state = {
   drag: null,
   customTheme: null,
   hoverTimer: null,
-  hoverToken: 0
+  hoverToken: 0,
+  renderPending: false
 };
 
 const elements = {
@@ -116,6 +117,9 @@ function makePane(id, path) {
     history: [path],
     historyIndex: 0,
     loading: true,
+    loadingSlow: false,
+    indexing: false,
+    indexingSlow: false,
     error: '',
     filter: '',
     showHidden: false,
@@ -130,17 +134,92 @@ function makePane(id, path) {
   };
 }
 
+const EAGER_PREVIEW_LIMIT = 32;
+const EAGER_SIZE_LIMIT = 16;
+const EAGER_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'heic', 'tif', 'tiff']);
+
+function updatePaneActivity(index) {
+  const pane = state.panes[index];
+  const paneElement = elements.panes.querySelector(`.pane[data-pane="${index}"]`);
+  if (!paneElement) return;
+  if (pane.loading && pane.loadingSlow) {
+    const stateElement = paneElement.querySelector('.empty-state div');
+    if (stateElement) stateElement.innerHTML = `${icon('refresh')}<br>建立索引中，请稍候`;
+    return;
+  }
+  const status = paneElement.querySelector('.pane-status');
+  if (status && pane.indexingSlow) status.children[0].textContent = '建立索引中，请稍候';
+}
+
+async function hydratePaneIndex(index, token) {
+  const pane = state.panes[index];
+  if (!pane || pane.loadToken !== token) return;
+  const slowTimer = setTimeout(() => {
+    if (pane.loadToken !== token || !pane.indexing) return;
+    pane.indexingSlow = true;
+    updatePaneActivity(index);
+  }, 2000);
+  const previewEntries = pane.entries
+    .filter((entry) => entry.isDirectory || EAGER_IMAGE_EXTENSIONS.has(entry.extension))
+    .slice(0, EAGER_PREVIEW_LIMIT);
+  const directories = pane.entries.filter((entry) => entry.isDirectory).slice(0, EAGER_SIZE_LIMIT);
+
+  const previewTask = (async () => {
+    for (let offset = 0; offset < previewEntries.length; offset += 8) {
+      const batch = previewEntries.slice(offset, offset + 8);
+      const results = await Promise.all(batch.map(async (entry) => ({ path: entry.path, ...(await api.preview(entry.path)) })));
+      if (pane.loadToken !== token) return;
+      const previewMap = new Map(results.map((preview) => [preview.path, preview]));
+      pane.entries = pane.entries.map((entry) => {
+        const preview = previewMap.get(entry.path);
+        if (!preview) return entry;
+        return { ...entry, previewStatus: 'ready', previewUrl: preview.url || null, previewKind: preview.previewKind || null, previewText: preview.previewText || null, previewError: preview.error || null, folderCover: Boolean(preview.folderCover), previewChildren: preview.children || [] };
+      });
+    }
+  })();
+
+  const sizeTask = directories.length ? api.folderSizes(directories.map((entry) => entry.path)).then((sizes) => {
+    if (pane.loadToken !== token) return;
+    const sizeMap = new Map(sizes.map((item) => [item.path, item.size]));
+    pane.entries = pane.entries.map((entry) => {
+      if (!sizeMap.has(entry.path)) return entry;
+      const size = sizeMap.get(entry.path);
+      return { ...entry, size: size ?? null, folderSizeStatus: Number.isFinite(size) ? 'ready' : 'unavailable' };
+    });
+  }).catch(() => {
+    if (pane.loadToken !== token) return;
+    const measuredPaths = new Set(directories.map((entry) => entry.path));
+    pane.entries = pane.entries.map((entry) => measuredPaths.has(entry.path) ? { ...entry, size: null, folderSizeStatus: 'unavailable' } : entry);
+  }) : Promise.resolve();
+
+  await Promise.allSettled([previewTask, sizeTask]);
+  clearTimeout(slowTimer);
+  if (pane.loadToken !== token) return;
+  pane.indexing = false;
+  pane.indexingSlow = false;
+  renderAllWhenIdle();
+}
+
 async function loadPane(index, targetPath, options = {}) {
   const pane = state.panes[index];
   if (!pane) return;
   const token = pane.loadToken + 1;
   pane.loadToken = token;
   pane.loading = true;
+  pane.loadingSlow = false;
+  pane.indexing = false;
+  pane.indexingSlow = false;
   pane.error = '';
   pane.selection.clear();
   renderPanes();
+  const loadingTimer = setTimeout(() => {
+    if (pane.loadToken !== token || !pane.loading) return;
+    pane.loadingSlow = true;
+    updatePaneActivity(index);
+  }, 2000);
   try {
     const result = await api.listDirectory(targetPath, pane.showHidden);
+    clearTimeout(loadingTimer);
     if (pane.loadToken !== token) return;
     pane.path = result.path;
     localStorage.setItem(`easymove-pane-${pane.id}-path`, pane.path);
@@ -148,12 +227,13 @@ async function loadPane(index, targetPath, options = {}) {
     pane.columnEntries = [];
     pane.entries = result.entries.map((entry) => ({
       ...entry,
-      folderSizeStatus: entry.isDirectory ? 'loading' : 'ready',
-      previewStatus: 'loading',
+      folderSizeStatus: entry.isDirectory ? 'idle' : 'ready',
+      previewStatus: 'idle',
       previewUrl: null,
       folderCover: false
     }));
     pane.loading = false;
+    pane.loadingSlow = false;
     pane.error = '';
     if (options.pushHistory !== false && pane.history[pane.historyIndex] !== result.path) {
       pane.history = pane.history.slice(0, pane.historyIndex + 1);
@@ -161,41 +241,16 @@ async function loadPane(index, targetPath, options = {}) {
       pane.historyIndex = pane.history.length - 1;
     }
     if (index === state.activePane) elements.globalSearch.value = pane.filter;
-    renderAll();
-
-    const previewResults = await Promise.all(pane.entries.map(async (entry) => {
-      const preview = await api.preview(entry.path);
-      return { path: entry.path, ...preview };
-    }));
-    if (pane.loadToken !== token) return;
-    const previewMap = new Map(previewResults.map((preview) => [preview.path, preview]));
-    pane.entries = pane.entries.map((entry) => {
-      const preview = previewMap.get(entry.path);
-      return { ...entry, previewStatus: 'ready', previewUrl: preview?.url || null, previewKind: preview?.previewKind || null, previewText: preview?.previewText || null, previewError: preview?.error || null, folderCover: Boolean(preview?.folderCover), previewChildren: preview?.children || [] };
-    });
-    renderAll();
-
-    const directories = pane.entries.filter((entry) => entry.isDirectory).map((entry) => entry.path);
-    if (directories.length) {
-      try {
-        const sizes = await api.folderSizes(directories);
-        if (pane.loadToken !== token) return;
-        const sizeMap = new Map(sizes.map((item) => [item.path, item.size]));
-        pane.entries = pane.entries.map((entry) => {
-          if (!entry.isDirectory) return entry;
-          const size = sizeMap.get(entry.path);
-          return { ...entry, size: size ?? null, folderSizeStatus: Number.isFinite(size) ? 'ready' : 'unavailable' };
-        });
-        renderAll();
-      } catch {
-        if (pane.loadToken !== token) return;
-        pane.entries = pane.entries.map((entry) => entry.isDirectory ? { ...entry, size: null, folderSizeStatus: 'unavailable' } : entry);
-        renderAll();
-      }
-    }
+    pane.indexing = pane.entries.length > 0;
+    renderAllWhenIdle();
+    if (pane.indexing) void hydratePaneIndex(index, token);
   } catch (error) {
+    clearTimeout(loadingTimer);
     if (pane.loadToken !== token) return;
     pane.loading = false;
+    pane.loadingSlow = false;
+    pane.indexing = false;
+    pane.indexingSlow = false;
     pane.error = error.message || String(error);
     renderPanes();
     showToast(pane.error, '无法打开文件夹');
@@ -282,25 +337,27 @@ function renderPane(pane) {
     const selected = entries.find((entry) => pane.selection.has(entry.path)) || entries[0];
     content = `<div class="gallery"><div class="gallery-stage">${previewMarkup(selected, true)}${selected ? `<strong>${escapeHtml(selected.name)}</strong><span>${escapeHtml(selected.kind)} · ${escapeHtml(formatSize(selected.size))}</span>` : ''}</div><div class="gallery-strip">${entries.map((entry) => itemMarkup(pane, entry, 'gallery-item')).join('')}</div></div>`;
   }
-  if (pane.loading) content = `<div class="empty-state"><div>${icon('refresh')}<br>正在读取文件夹…</div></div>`;
+  if (pane.loading) content = `<div class="empty-state"><div>${icon('refresh')}<br>${pane.loadingSlow ? '建立索引中，请稍候' : '正在读取文件夹…'}</div></div>`;
   else if (pane.error) content = `<div class="empty-state"><div>${icon('close')}<br>${escapeHtml(pane.error)}</div></div>`;
   else if (!entries.length) content = `<div class="empty-state"><div>${icon('bloom')}<br>${pane.filter ? '没有匹配的文件' : '这个文件夹是空的'}</div></div>`;
 
   const selectedSize = pane.entries.filter((entry) => pane.selection.has(entry.path) && entry.folderSizeStatus === 'ready').reduce((sum, entry) => sum + entry.size, 0);
   return `<section class="pane${pane.id === state.activePane ? ' active' : ''}" data-pane="${pane.id}">
-    <div class="pane-tabs"><div class="pane-tab">${icon('folder')}<span>${escapeHtml(basename(pane.path) || pane.path)}</span></div></div>
-    <div class="pane-address">
-      <div class="address-buttons">
-        <button class="mini-button" data-pane-action="back" data-pane="${pane.id}" ${pane.historyIndex <= 0 ? 'disabled' : ''} title="后退">${icon('back')}</button>
-        <button class="mini-button" data-pane-action="forward" data-pane="${pane.id}" ${pane.historyIndex >= pane.history.length - 1 ? 'disabled' : ''} title="前进">${icon('next')}</button>
-        <button class="mini-button" data-pane-action="up" data-pane="${pane.id}" title="上一级">${icon('up')}</button>
+    <div class="pane-header">
+      <div class="pane-tabs"><div class="pane-tab">${icon('folder')}<span>${escapeHtml(basename(pane.path) || pane.path)}</span></div></div>
+      <div class="pane-address">
+        <div class="address-buttons">
+          <button class="mini-button" data-pane-action="back" data-pane="${pane.id}" ${pane.historyIndex <= 0 ? 'disabled' : ''} title="后退">${icon('back')}</button>
+          <button class="mini-button" data-pane-action="forward" data-pane="${pane.id}" ${pane.historyIndex >= pane.history.length - 1 ? 'disabled' : ''} title="前进">${icon('next')}</button>
+          <button class="mini-button" data-pane-action="up" data-pane="${pane.id}" title="上一级">${icon('up')}</button>
+        </div>
+        <input class="path-input" data-pane="${pane.id}" value="${escapeHtml(pane.path)}" aria-label="当前路径">
+        ${viewControls(pane)}
+        <button class="mini-button" data-pane-action="refresh" data-pane="${pane.id}" title="刷新" aria-label="刷新">${icon('refresh')}</button>
       </div>
-      <input class="path-input" data-pane="${pane.id}" value="${escapeHtml(pane.path)}" aria-label="当前路径">
-      ${viewControls(pane)}
-      <button class="mini-button" data-pane-action="refresh" data-pane="${pane.id}" title="刷新" aria-label="刷新">${icon('refresh')}</button>
     </div>
     <div class="file-list">${content}</div>
-    <div class="pane-status"><span>${pane.selection.size ? `已选择 ${pane.selection.size} 项` : `${pane.entries.length} 个项目`}</span><span>${selectedSize ? formatSize(selectedSize) : escapeHtml(pane.path)}</span></div>
+    <div class="pane-status"><span>${pane.indexingSlow ? '建立索引中，请稍候' : pane.selection.size ? `已选择 ${pane.selection.size} 项` : `${pane.entries.length} 个项目`}</span><span>${selectedSize ? formatSize(selectedSize) : escapeHtml(pane.path)}</span></div>
   </section>`;
 }
 
@@ -343,6 +400,21 @@ function renderAll() {
   renderPanes();
   renderSidebar();
   renderSelectionSummary();
+}
+
+function renderAllWhenIdle() {
+  if (state.drag || elements.panes.classList.contains('is-dragging')) {
+    state.renderPending = true;
+    return;
+  }
+  state.renderPending = false;
+  renderAll();
+}
+
+function flushPendingRender() {
+  if (!state.renderPending || state.drag || elements.panes.classList.contains('is-dragging')) return;
+  state.renderPending = false;
+  renderAll();
 }
 
 function syncPaneInteractionState() {
@@ -670,6 +742,7 @@ elements.panes.addEventListener('drop', async (event) => {
   const modifier = { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, altKey: event.altKey };
   clearDropFeedback();
   state.drag = null;
+  flushPendingRender();
   if (!paths.length) return showToast('没有识别到可拖放的文件');
   const mode = await resolvedDragMode(paths, target.directory, modifier);
   const reason = invalidDropReason(paths, target.directory, mode);
@@ -684,6 +757,7 @@ document.addEventListener('dragend', () => {
   state.drag = null;
   clearDropFeedback();
   elements.panes.querySelectorAll('.file-row.drag-source').forEach((row) => row.classList.remove('drag-source'));
+  flushPendingRender();
 });
 
 window.addEventListener('dragover', (event) => {
@@ -783,8 +857,31 @@ elements.panes.addEventListener('mouseover', (event) => {
   if (!entry) return;
   clearTimeout(state.hoverTimer);
   const token = ++state.hoverToken;
-  state.hoverTimer = setTimeout(() => {
+  state.hoverTimer = setTimeout(async () => {
     if (token !== state.hoverToken || !previewIcon.isConnected) return;
+    let slowTimer;
+    if (entry.previewStatus !== 'ready') {
+      entry.previewStatus = 'loading';
+      slowTimer = setTimeout(() => {
+        if (token !== state.hoverToken || !previewIcon.isConnected) return;
+        elements.hoverPreview.innerHTML = `<div class="preview-fallback"><strong>建立索引中，请稍候</strong><span>正在生成真实内容预览</span></div><strong>${escapeHtml(entry.name)}</strong>`;
+        elements.hoverPreview.hidden = false;
+        const rect = previewIcon.getBoundingClientRect();
+        const box = elements.hoverPreview.getBoundingClientRect();
+        elements.hoverPreview.style.left = `${Math.max(12, Math.min(window.innerWidth - box.width - 12, rect.right + 10))}px`;
+        elements.hoverPreview.style.top = `${Math.max(12, Math.min(window.innerHeight - box.height - 12, rect.top - 16))}px`;
+      }, 2000);
+      try {
+        Object.assign(entry, await api.preview(entry.path), { previewStatus: 'ready' });
+      } catch (error) {
+        Object.assign(entry, { previewStatus: 'ready', previewError: error.message || 'UNAVAILABLE' });
+      } finally {
+        clearTimeout(slowTimer);
+      }
+    }
+    if (token !== state.hoverToken || !previewIcon.isConnected) return;
+    if (entry.previewUrl) previewIcon.innerHTML = `<img src="${escapeHtml(entry.previewUrl)}" alt="">`;
+    previewIcon.classList.toggle('folder-cover', Boolean(entry.folderCover));
     const media = entry.previewUrl ? `<img src="${escapeHtml(entry.previewUrl)}" alt="真实内容预览">` : entry.previewText ? `<div class="preview-fallback preview-content"><strong>真实内容</strong><span>${escapeHtml(entry.previewText.slice(0, 620))}</span></div>` : `<div class="preview-fallback"><strong>无法生成内容预览</strong><span>${escapeHtml(entry.previewError || '文件消失、权限不足、损坏或格式未支持')}</span></div>`;
     const content = entry.previewText ? `<div class="preview-text">${escapeHtml(entry.previewText.slice(0, 260))}</div>` : '';
     const children = entry.isDirectory && entry.previewChildren?.length ? `<div class="preview-children">${entry.previewChildren.map(escapeHtml).join(' · ')}</div>` : '';

@@ -8,7 +8,7 @@ const { FolderSizeService } = require('./folder-size-service');
 const { ThumbnailService } = require('./thumbnail-service');
 
 const operations = new Map();
-const folderSizes = new FolderSizeService();
+let folderSizes = null;
 let thumbnails = null;
 let mainWindow = null;
 
@@ -120,7 +120,7 @@ function registerThumbnailProtocol() {
 }
 
 function invalidateCaches() {
-  folderSizes.invalidate();
+  folderSizes?.invalidate();
   thumbnails?.invalidate();
 }
 
@@ -209,6 +209,7 @@ function buildMenu() {
 }
 
 app.whenReady().then(() => {
+  folderSizes = new FolderSizeService({ cacheFile: path.join(app.getPath('userData'), 'indexes', 'folder-sizes.json') });
   thumbnails = new ThumbnailService({ cacheDirectory: path.join(app.getPath('cache'), 'EasyMove', 'thumbnails') });
   registerThemeProtocol();
   registerThumbnailProtocol();
@@ -224,7 +225,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => folderSizes.close().catch(() => {}));
+app.on('before-quit', () => folderSizes?.close().catch(() => {}));
 
 function normalizeDirectory(input) {
   const resolved = path.resolve(String(input || os.homedir()));
@@ -528,7 +529,7 @@ function registerIpc() {
     return { path: directory, entries: await getDirectoryEntries(directory, request.showHidden) };
   });
 
-  ipcMain.handle('fs:folder-sizes', async (_event, paths) => folderSizes.measure(paths || []));
+  ipcMain.handle('fs:folder-sizes', async (_event, paths) => folderSizes?.measure(paths || []) || []);
 
   ipcMain.handle('fs:preview', async (_event, itemPath) => {
     try {
