@@ -85,6 +85,12 @@ function formatSize(bytes) {
   return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
 }
 
+function formatEntrySize(entry) {
+  if (entry.folderSizeStatus === 'loading') return '计算中…';
+  if (entry.isDirectory && entry.folderSizeStatus !== 'ready') return '—';
+  return formatSize(entry.size);
+}
+
 function formatDate(timestamp) {
   if (!timestamp) return '—';
   const date = new Date(timestamp);
@@ -225,9 +231,9 @@ async function loadPane(index, targetPath, options = {}) {
     localStorage.setItem(`easymove-pane-${pane.id}-path`, pane.path);
     pane.columnPath = null;
     pane.columnEntries = [];
-    pane.entries = result.entries.map((entry) => ({
+    pane.entries = result.entries.map((entry, entryIndex) => ({
       ...entry,
-      folderSizeStatus: entry.isDirectory ? 'idle' : 'ready',
+      folderSizeStatus: entry.isDirectory ? (entryIndex < EAGER_SIZE_LIMIT ? 'loading' : 'idle') : 'ready',
       previewStatus: 'idle',
       previewUrl: null,
       folderCover: false
@@ -292,7 +298,7 @@ function itemMarkup(pane, entry, extraClass = '') {
   const cut = state.clipboard?.mode === 'move' && state.clipboard.paths.includes(entry.path) ? ' cut' : '';
   const fallback = entry.isDirectory ? icon('folder') : icon('image');
   const thumbnail = entry.previewUrl ? `<img src="${escapeHtml(entry.previewUrl)}" alt="">` : fallback;
-  return `<div class="file-row ${extraClass}${selected}${cut}" data-pane="${pane.id}" data-path="${encodePath(entry.path)}" draggable="true" tabindex="0" aria-selected="${pane.selection.has(entry.path)}" title="${escapeHtml(entry.name)}"><span class="file-icon${entry.isDirectory ? (entry.folderCover ? ' folder-cover' : '') : ' file'}" data-preview-icon>${thumbnail}</span><span class="item-name">${escapeHtml(entry.name)}</span><span class="item-kind">${escapeHtml(entry.kind)}</span><span class="item-date">${escapeHtml(formatDate(entry.modified))}</span><span class="item-size">${entry.folderSizeStatus === 'loading' ? '计算中…' : escapeHtml(formatSize(entry.size))}</span></div>`;
+  return `<div class="file-row ${extraClass}${selected}${cut}" data-pane="${pane.id}" data-path="${encodePath(entry.path)}" draggable="true" tabindex="0" aria-selected="${pane.selection.has(entry.path)}" title="${escapeHtml(entry.name)}"><span class="file-icon${entry.isDirectory ? (entry.folderCover ? ' folder-cover' : '') : ' file'}" data-preview-icon>${thumbnail}</span><span class="item-name">${escapeHtml(entry.name)}</span><span class="item-kind">${escapeHtml(entry.kind)}</span><span class="item-date">${escapeHtml(formatDate(entry.modified))}</span><span class="item-size">${escapeHtml(formatEntrySize(entry))}</span></div>`;
 }
 
 function viewControls(pane) {
@@ -321,7 +327,7 @@ function renderPane(pane) {
       <td><div class="file-name" title="${escapeHtml(entry.name)}"><span class="file-icon${entry.isDirectory ? (entry.folderCover ? ' folder-cover' : '') : ' file'}" data-preview-icon>${thumbnail}</span><span>${escapeHtml(entry.name)}</span></div></td>
       <td>${escapeHtml(entry.kind)}</td>
       <td>${escapeHtml(formatDate(entry.modified))}</td>
-      <td class="size-cell${entry.folderSizeStatus === 'loading' ? ' calculating' : ''}">${entry.folderSizeStatus === 'loading' ? '计算中…' : escapeHtml(formatSize(entry.size))}</td>
+      <td class="size-cell${entry.folderSizeStatus === 'loading' ? ' calculating' : ''}">${escapeHtml(formatEntrySize(entry))}</td>
     </tr>`;
   }).join('');
 
@@ -885,7 +891,7 @@ elements.panes.addEventListener('mouseover', (event) => {
     const media = entry.previewUrl ? `<img src="${escapeHtml(entry.previewUrl)}" alt="真实内容预览">` : entry.previewText ? `<div class="preview-fallback preview-content"><strong>真实内容</strong><span>${escapeHtml(entry.previewText.slice(0, 620))}</span></div>` : `<div class="preview-fallback"><strong>无法生成内容预览</strong><span>${escapeHtml(entry.previewError || '文件消失、权限不足、损坏或格式未支持')}</span></div>`;
     const content = entry.previewText ? `<div class="preview-text">${escapeHtml(entry.previewText.slice(0, 260))}</div>` : '';
     const children = entry.isDirectory && entry.previewChildren?.length ? `<div class="preview-children">${entry.previewChildren.map(escapeHtml).join(' · ')}</div>` : '';
-    elements.hoverPreview.innerHTML = `${media}${content}<strong>${escapeHtml(entry.name)}</strong><span>${escapeHtml(entry.kind)} · ${escapeHtml(formatDate(entry.modified))} · ${escapeHtml(entry.folderSizeStatus === 'loading' ? '计算中…' : formatSize(entry.size))}</span>${children}`;
+    elements.hoverPreview.innerHTML = `${media}${content}<strong>${escapeHtml(entry.name)}</strong><span>${escapeHtml(entry.kind)} · ${escapeHtml(formatDate(entry.modified))} · ${escapeHtml(formatEntrySize(entry))}</span>${children}`;
     elements.hoverPreview.hidden = false;
     const rect = previewIcon.getBoundingClientRect();
     const box = elements.hoverPreview.getBoundingClientRect();
