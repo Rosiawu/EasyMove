@@ -67,6 +67,19 @@ EasyMove 是一款面向 Windows 与 macOS 的多窗格文件管理器。它把�
 
 ![拖放到另一窗格](docs/screenshots/easymove-drag-drop.png)
 
+## 自定义主题
+
+点击顶部主题栏的“我的”：
+
+1. 选择一张 PNG、JPEG 或 WebP 图片，最大 50 MB。
+2. EasyMove 会在本机用户数据目录保存一份副本并立即应用。
+3. 点击任一内置主题可随时切回；再次点击“我的”可恢复已保存的图片。
+4. 当“我的”已经启用时再次点击，可以选择新图片替换。
+
+图片不会上传网络；导入后移动或删除原图也不会影响主题。自定义主题在应用重启后继续保留。
+
+![EasyMove 自定义主题](docs/screenshots/easymove-custom-theme.png)
+
 ## 本地开发
 
 需要 Node.js 22 或更高版本。
