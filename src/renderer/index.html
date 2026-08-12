@@ -47,7 +47,7 @@
     <header class="titlebar">
       <div class="brand">
         <span class="brand-mark"><span></span></span>
-        <span class="brand-name">EasyMove <small>0.3.0</small></span>
+        <span class="brand-name">EasyMove <small>0.3.1</small></span>
         <svg class="brand-flower"><use href="#i-bloom"/></svg>
       </div>
 
@@ -112,7 +112,10 @@
             <button class="tool-button" data-command="move-other"><svg><use href="#i-move"/></svg><span>移动到另一窗格</span></button>
           </div>
         </div>
-        <div class="panes layout-2" id="panes"></div>
+        <div class="content-stage" id="contentStage">
+          <div class="panes layout-2" id="panes"></div>
+          <aside class="selection-preview" id="selectionPreview" aria-label="所选项目预览" hidden></aside>
+        </div>
       </section>
     </section>
 

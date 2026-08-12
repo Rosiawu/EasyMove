@@ -16,6 +16,8 @@ const state = {
   customTheme: null,
   hoverTimer: null,
   hoverToken: 0,
+  selectionPreviewToken: 0,
+  selectionPreview: null,
   renderPending: false
 };
 
@@ -41,7 +43,9 @@ const elements = {
   renameInput: document.getElementById('renameInput'),
   natureSoundToggle: document.getElementById('natureSoundToggle'),
   customThemeButton: document.getElementById('customThemeButton'),
-  hoverPreview: document.getElementById('hoverPreview')
+  hoverPreview: document.getElementById('hoverPreview'),
+  contentStage: document.getElementById('contentStage'),
+  selectionPreview: document.getElementById('selectionPreview')
 };
 
 function escapeHtml(value) {
@@ -217,6 +221,7 @@ async function loadPane(index, targetPath, options = {}) {
   pane.indexingSlow = false;
   pane.error = '';
   pane.selection.clear();
+  if (state.selectionPreview?.paneIndex === index) closeSelectionPreview();
   renderPanes();
   const loadingTimer = setTimeout(() => {
     if (pane.loadToken !== token || !pane.loading) return;
@@ -310,6 +315,95 @@ function previewMarkup(entry, large = false) {
   if (entry.previewUrl) return `<img class="content-preview${large ? ' large' : ''}" src="${escapeHtml(entry.previewUrl)}" alt="${escapeHtml(entry.name)} 预览">`;
   if (entry.previewText) return `<div class="preview-document">${escapeHtml(entry.previewText.slice(0, 1800))}</div>`;
   return `<div class="preview-error"><strong>无法预览</strong><span>${escapeHtml(previewErrorMessage(entry.previewError))}</span><button data-open-path="${encodePath(entry.path)}">用系统应用打开</button><button data-retry-preview="${encodePath(entry.path)}">重试</button></div>`;
+}
+
+function applyPreviewResult(entry, result = {}) {
+  Object.assign(entry, {
+    previewStatus: 'ready',
+    previewUrl: result.url || result.previewUrl || null,
+    previewKind: result.previewKind || null,
+    previewText: result.previewText || null,
+    previewError: result.error || result.previewError || null,
+    folderCover: Boolean(result.folderCover),
+    previewChildren: result.children || result.previewChildren || []
+  });
+  return entry;
+}
+
+async function ensureEntryPreview(entry) {
+  if (!entry || entry.previewStatus === 'ready') return entry;
+  if (entry.previewPromise) return entry.previewPromise;
+  entry.previewStatus = 'loading';
+  entry.previewPromise = api.preview(entry.path)
+    .then((result) => applyPreviewResult(entry, result))
+    .catch((error) => applyPreviewResult(entry, { error: error.message || 'UNAVAILABLE' }))
+    .finally(() => { delete entry.previewPromise; });
+  return entry.previewPromise;
+}
+
+function previewMediaMarkup(entry, context = 'selection') {
+  if (entry.previewStatus === 'loading') {
+    return `<div class="preview-fallback preview-loading">${icon('refresh')}<strong>正在建立预览…</strong><span>超过 2 秒时会继续提示索引状态</span></div>`;
+  }
+  if (entry.previewUrl) return `<img class="${context}-preview-image" src="${escapeHtml(entry.previewUrl)}" alt="${escapeHtml(entry.name)} 预览">`;
+  if (entry.previewText) return `<pre class="${context}-preview-text">${escapeHtml(entry.previewText.slice(0, context === 'selection' ? 5000 : 620))}</pre>`;
+  if (entry.isDirectory) {
+    const children = entry.previewChildren?.length
+      ? `<div class="folder-preview-children">${entry.previewChildren.slice(0, 8).map((name) => `<span>${icon('folder')} ${escapeHtml(name)}</span>`).join('')}</div>`
+      : `<span class="preview-muted">${entry.previewStatus === 'ready' ? '空文件夹，或内容暂不可读' : '读取文件夹摘要'}</span>`;
+    return `<div class="preview-fallback folder-preview">${icon('folder')}<strong>文件夹</strong>${children}</div>`;
+  }
+  return `<div class="preview-fallback file-preview">${icon('image')}<strong>${escapeHtml(entry.kind || '文件')}</strong><span>${escapeHtml(previewErrorMessage(entry.previewError))}</span></div>`;
+}
+
+function selectionPreviewMarkup(entry, slow = false) {
+  const actionLabel = entry.isDirectory ? '打开文件夹' : '用系统应用打开';
+  const folderSummary = entry.isDirectory && entry.previewUrl && entry.previewChildren?.length
+    ? `<div class="selection-folder-summary"><strong>文件夹内容</strong><div class="folder-preview-children">${entry.previewChildren.slice(0, 8).map((name) => `<span>${icon('folder')} ${escapeHtml(name)}</span>`).join('')}</div></div>`
+    : '';
+  return `<div class="selection-preview-header"><div><span>所选项目</span><strong>${escapeHtml(entry.name)}</strong></div><button data-preview-close aria-label="关闭预览" title="关闭预览">${icon('close')}</button></div>
+    <div class="selection-preview-body">
+      ${slow ? `<div class="selection-indexing">建立索引中，请稍候</div>` : ''}
+      <div class="selection-preview-media">${previewMediaMarkup(entry)}</div>
+      ${folderSummary}
+      <dl class="preview-metadata">
+        <div><dt>类型</dt><dd>${escapeHtml(entry.kind || (entry.isDirectory ? '文件夹' : '文件'))}</dd></div>
+        <div><dt>修改时间</dt><dd>${escapeHtml(formatDate(entry.modified))}</dd></div>
+        <div><dt>大小</dt><dd>${escapeHtml(formatEntrySize(entry))}</dd></div>
+        <div><dt>位置</dt><dd title="${escapeHtml(entry.path)}">${escapeHtml(parentPath(entry.path))}</dd></div>
+      </dl>
+    </div>
+    <div class="selection-preview-actions"><button class="preview-open-button" data-preview-open="${encodePath(entry.path)}" data-preview-pane="${state.selectionPreview?.paneIndex ?? state.activePane}" data-preview-directory="${entry.isDirectory ? 'true' : 'false'}">${actionLabel}</button>${entry.previewError && !entry.isDirectory ? `<button data-preview-retry="${encodePath(entry.path)}">重新生成预览</button>` : ''}</div>`;
+}
+
+function closeSelectionPreview() {
+  state.selectionPreviewToken += 1;
+  state.selectionPreview = null;
+  elements.selectionPreview.hidden = true;
+  elements.selectionPreview.innerHTML = '';
+  elements.contentStage.classList.remove('has-selection-preview');
+}
+
+async function showSelectionPreview(paneIndex, entry) {
+  if (!entry) return closeSelectionPreview();
+  const token = ++state.selectionPreviewToken;
+  state.selectionPreview = { paneIndex, path: entry.path };
+  elements.contentStage.classList.add('has-selection-preview');
+  elements.selectionPreview.hidden = false;
+  elements.selectionPreview.innerHTML = selectionPreviewMarkup(entry);
+  if (entry.previewStatus === 'ready') return;
+  const slowTimer = setTimeout(() => {
+    if (token !== state.selectionPreviewToken) return;
+    elements.selectionPreview.innerHTML = selectionPreviewMarkup(entry, true);
+  }, 2000);
+  await ensureEntryPreview(entry);
+  clearTimeout(slowTimer);
+  if (token !== state.selectionPreviewToken || state.selectionPreview?.path !== entry.path) return;
+  elements.selectionPreview.innerHTML = selectionPreviewMarkup(entry);
+  const row = elements.panes.querySelector(`.file-row[data-pane="${paneIndex}"][data-path="${CSS.escape(encodePath(entry.path))}"]`);
+  const previewIcon = row?.querySelector('[data-preview-icon]');
+  if (previewIcon && entry.previewUrl) previewIcon.innerHTML = `<img src="${escapeHtml(entry.previewUrl)}" alt="">`;
+  previewIcon?.classList.toggle('folder-cover', Boolean(entry.folderCover));
 }
 
 function previewErrorMessage(code) {
@@ -813,6 +907,11 @@ elements.panes.addEventListener('click', async (event) => {
     const pane = state.panes[paneIndex];
     selectRow(paneIndex, filePath, event);
     const entry = [...pane.entries, ...pane.columnEntries].find((item) => item.path === filePath);
+    const previewEntry = pane.selection.has(filePath)
+      ? entry
+      : [...pane.entries, ...pane.columnEntries].find((item) => pane.selection.has(item.path));
+    if (previewEntry) void showSelectionPreview(paneIndex, previewEntry);
+    else closeSelectionPreview();
     if (pane.viewMode === 'column' && entry?.isDirectory) {
       const token = ++pane.columnToken;
       pane.columnPath = entry.path;
@@ -829,7 +928,7 @@ elements.panes.addEventListener('click', async (event) => {
       }
       pane.columnLoading = false;
       renderPanes();
-    } else renderPanes();
+    } else if (pane.viewMode === 'gallery') renderPanes();
     return;
   }
   const action = event.target.closest('[data-pane-action]');
@@ -855,45 +954,38 @@ function hideHoverPreview() {
 }
 
 elements.panes.addEventListener('mouseover', (event) => {
-  const previewIcon = event.target.closest('[data-preview-icon]');
-  if (!previewIcon) return;
-  const row = previewIcon.closest('.file-row');
+  const row = event.target.closest('.file-row');
+  if (!row || row.contains(event.relatedTarget)) return;
+  const previewIcon = row.querySelector('[data-preview-icon]');
   const pane = state.panes[Number(row.dataset.pane)];
-  const entry = pane.entries.find((item) => item.path === decodePath(row.dataset.path));
+  const entry = [...pane.entries, ...pane.columnEntries].find((item) => item.path === decodePath(row.dataset.path));
   if (!entry) return;
   clearTimeout(state.hoverTimer);
   const token = ++state.hoverToken;
   state.hoverTimer = setTimeout(async () => {
-    if (token !== state.hoverToken || !previewIcon.isConnected) return;
+    if (token !== state.hoverToken || !row.isConnected) return;
     let slowTimer;
     if (entry.previewStatus !== 'ready') {
-      entry.previewStatus = 'loading';
       slowTimer = setTimeout(() => {
-        if (token !== state.hoverToken || !previewIcon.isConnected) return;
+        if (token !== state.hoverToken || !row.isConnected) return;
         elements.hoverPreview.innerHTML = `<div class="preview-fallback"><strong>建立索引中，请稍候</strong><span>正在生成真实内容预览</span></div><strong>${escapeHtml(entry.name)}</strong>`;
         elements.hoverPreview.hidden = false;
-        const rect = previewIcon.getBoundingClientRect();
+        const rect = row.getBoundingClientRect();
         const box = elements.hoverPreview.getBoundingClientRect();
         elements.hoverPreview.style.left = `${Math.max(12, Math.min(window.innerWidth - box.width - 12, rect.right + 10))}px`;
         elements.hoverPreview.style.top = `${Math.max(12, Math.min(window.innerHeight - box.height - 12, rect.top - 16))}px`;
       }, 2000);
-      try {
-        Object.assign(entry, await api.preview(entry.path), { previewStatus: 'ready' });
-      } catch (error) {
-        Object.assign(entry, { previewStatus: 'ready', previewError: error.message || 'UNAVAILABLE' });
-      } finally {
-        clearTimeout(slowTimer);
-      }
+      await ensureEntryPreview(entry);
+      clearTimeout(slowTimer);
     }
-    if (token !== state.hoverToken || !previewIcon.isConnected) return;
-    if (entry.previewUrl) previewIcon.innerHTML = `<img src="${escapeHtml(entry.previewUrl)}" alt="">`;
-    previewIcon.classList.toggle('folder-cover', Boolean(entry.folderCover));
-    const media = entry.previewUrl ? `<img src="${escapeHtml(entry.previewUrl)}" alt="真实内容预览">` : entry.previewText ? `<div class="preview-fallback preview-content"><strong>真实内容</strong><span>${escapeHtml(entry.previewText.slice(0, 620))}</span></div>` : `<div class="preview-fallback"><strong>无法生成内容预览</strong><span>${escapeHtml(entry.previewError || '文件消失、权限不足、损坏或格式未支持')}</span></div>`;
-    const content = entry.previewText ? `<div class="preview-text">${escapeHtml(entry.previewText.slice(0, 260))}</div>` : '';
+    if (token !== state.hoverToken || !row.isConnected) return;
+    if (previewIcon && entry.previewUrl) previewIcon.innerHTML = `<img src="${escapeHtml(entry.previewUrl)}" alt="">`;
+    previewIcon?.classList.toggle('folder-cover', Boolean(entry.folderCover));
+    const media = previewMediaMarkup(entry, 'hover');
     const children = entry.isDirectory && entry.previewChildren?.length ? `<div class="preview-children">${entry.previewChildren.map(escapeHtml).join(' · ')}</div>` : '';
-    elements.hoverPreview.innerHTML = `${media}${content}<strong>${escapeHtml(entry.name)}</strong><span>${escapeHtml(entry.kind)} · ${escapeHtml(formatDate(entry.modified))} · ${escapeHtml(formatEntrySize(entry))}</span>${children}`;
+    elements.hoverPreview.innerHTML = `${media}<strong>${escapeHtml(entry.name)}</strong><span>${escapeHtml(entry.kind)} · ${escapeHtml(formatDate(entry.modified))} · ${escapeHtml(formatEntrySize(entry))}</span>${children}`;
     elements.hoverPreview.hidden = false;
-    const rect = previewIcon.getBoundingClientRect();
+    const rect = row.getBoundingClientRect();
     const box = elements.hoverPreview.getBoundingClientRect();
     const left = Math.max(12, Math.min(window.innerWidth - box.width - 12, rect.right + 10));
     const top = Math.max(12, Math.min(window.innerHeight - box.height - 12, rect.top - 16));
@@ -903,8 +995,8 @@ elements.panes.addEventListener('mouseover', (event) => {
 });
 
 elements.panes.addEventListener('mouseout', (event) => {
-  const previewIcon = event.target.closest('[data-preview-icon]');
-  if (previewIcon && !previewIcon.contains(event.relatedTarget)) hideHoverPreview();
+  const row = event.target.closest('.file-row');
+  if (row && !row.contains(event.relatedTarget)) hideHoverPreview();
 });
 
 elements.panes.addEventListener('scroll', hideHoverPreview, true);
@@ -921,6 +1013,28 @@ elements.panes.addEventListener('dblclick', async (event) => {
     const error = await api.open(entry.path);
     if (error) showToast(error, '无法打开文件');
   }
+});
+
+elements.selectionPreview.addEventListener('click', async (event) => {
+  if (event.target.closest('[data-preview-close]')) return closeSelectionPreview();
+  const openButton = event.target.closest('[data-preview-open]');
+  if (openButton) {
+    const filePath = decodePath(openButton.dataset.previewOpen);
+    if (openButton.dataset.previewDirectory === 'true') await loadPane(Number(openButton.dataset.previewPane), filePath);
+    else {
+      const error = await api.open(filePath);
+      if (error) showToast(error, '无法打开文件');
+    }
+    return;
+  }
+  const retryButton = event.target.closest('[data-preview-retry]');
+  if (!retryButton || !state.selectionPreview) return;
+  const pane = state.panes[state.selectionPreview.paneIndex];
+  const entry = [...pane.entries, ...pane.columnEntries].find((item) => item.path === decodePath(retryButton.dataset.previewRetry));
+  if (!entry) return;
+  entry.previewStatus = 'idle';
+  entry.previewError = null;
+  await showSelectionPreview(state.selectionPreview.paneIndex, entry);
 });
 
 elements.panes.addEventListener('keydown', (event) => {
