@@ -577,9 +577,15 @@ function selectedPaths() {
   return Array.from(activePane()?.selection || []);
 }
 
+function dismissPreviewsForTransfer() {
+  hideHoverPreview();
+  closeSelectionPreview();
+}
+
 function copySelection(mode) {
   const paths = selectedPaths();
   if (!paths.length) return showToast('请先选择文件或文件夹');
+  if (mode === 'move') dismissPreviewsForTransfer();
   state.clipboard = { paths, mode };
   syncPaneInteractionState();
   showToast(`${paths.length} 项已${mode === 'move' ? '剪切' : '复制'}，请选择目标窗格后粘贴`);
@@ -594,6 +600,7 @@ function selectAllEntries() {
 async function startTransfer(paths, targetDirectory, mode) {
   if (!paths.length) return showToast('没有可传输的文件');
   if (state.operation) return showToast('当前已有传输任务，请等待完成');
+  if (mode === 'move') dismissPreviewsForTransfer();
   try {
     const result = await api.transfer(paths, targetDirectory, mode);
     state.operation = { id: result.id, mode, paths, targetDirectory };
@@ -805,6 +812,7 @@ elements.panes.addEventListener('dragstart', (event) => {
   event.dataTransfer.setData('application/x-easymove-paths', JSON.stringify(paths));
   event.dataTransfer.setData('text/plain', paths.join('\n'));
   event.dataTransfer.setDragImage(row, 24, 16);
+  dismissPreviewsForTransfer();
   if (event.isTrusted) {
     event.preventDefault();
     state.drag = null;
