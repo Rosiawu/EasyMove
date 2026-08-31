@@ -2,6 +2,8 @@
 
 EasyMove 是一款面向 Windows 与 macOS 的多窗格文件管理器。它把复制、移动、剪切和粘贴放在界面中心，同时保留克制、通透的水彩气质。
 
+> 由 **吴熳（Rosiawu）** 创作与设计。官方 GitHub 账号：[@Rosiawu](https://github.com/Rosiawu)；联系邮箱：[woorosia@gmail.com](mailto:woorosia@gmail.com)。
+
 ![EasyMove 蓝雾花笺主题](docs/screenshots/easymove-blue-mist.png)
 
 ## 功能
@@ -32,7 +34,8 @@ EasyMove 是一款面向 Windows 与 macOS 的多窗格文件管理器。它把�
 - macOS 右键菜单可将选中的文件、文件夹或多选批次直接交给百度网盘本机上传队列，无需经过 Finder 二次确认
 - SD 卡、U 盘及其他百度沙盒无法直接读取的位置，会先安全交接到百度应用组缓存；保留原文件名并核对大小与目录结构，上传成功后自动清理临时副本
 - 百度网盘入口不申请“辅助功能”或“完全磁盘访问”权限、不模拟鼠标键盘；提示只表示任务已进入百度队列，不会把排队误报为云端上传完成
-- 底部常驻作者署名：Designed with care by Rosiawu
+- 底部常驻作者署名：Designed with care by 吴熳 · Rosiawu
+- 工具栏按钮在鼠标悬停或键盘聚焦时显示两行教学气泡，同时说明用途和当前系统快捷键
 - 文件操作历史支持撤销；重名时可选择替换、保留双方、跳过或取消，失败项目可重试
 - 粘贴完成后自动选中新项目、滚动到可见区域并短暂高亮
 - 像 Windows 文件管理器一样拖放：同盘默认移动、跨盘默认复制，可直接拖到另一窗格或具体文件夹
@@ -52,13 +55,11 @@ EasyMove 是一款面向 Windows 与 macOS 的多窗格文件管理器。它把�
 
 ### macOS
 
-当前 0.6.19 安装包支持 Apple Silicon（M1/M2/M3/M4/M5）Mac。打开 DMG，将 EasyMove 拖到“应用程序”。
-
-此测试版尚未使用 Apple Developer ID 签名或公证。若 macOS 阻止首次启动，请在 Finder 中右键 EasyMove，选择“打开”；也可前往“系统设置 → 隐私与安全性”选择“仍要打开”。
+0.6.19 的源码预发布支持 Apple Silicon（M1/M2/M3/M4/M5）Mac。官方 DMG 只会在完成 Apple Developer ID 签名、Apple 公证、票据装订和 Gatekeeper 校验后公开；准备期间请从源码运行。
 
 ### Windows
 
-当前安装包支持 Windows 10/11 x64。运行 EXE 后可选择安装位置。
+当前源码支持构建 Windows 10/11 x64 版本。正式对外发布前仍需在真实 Windows 10/11 设备上完成安装验收。
 
 此测试版尚未购买代码签名证书。如果 Microsoft Defender SmartScreen 提示未知发布者，请先核对本仓库 Release 中的 SHA-256，再选择“更多信息 → 仍要运行”。
 
@@ -156,7 +157,7 @@ Quick Look 的覆盖范围仍取决于 macOS 版本与已安装预览生成器�
 ## 已知限制
 
 - macOS 预构建包目前仅提供 Apple Silicon 版本
-- 发布包尚未使用商业代码签名或 Apple 公证
+- macOS 官方 DMG 暂缓公开，等待 Apple Developer Program 会员、Developer ID 签名与 Apple 公证就绪
 - Windows 版本已通过 Wine 验证启动、真实目录读取和文件复制；发布前仍建议在真实 Windows 10/11 机器上完成一轮安装验收
 - 百度网盘上传依赖本机已经安装并登录的百度网盘客户端；EasyMove 使用百度客户端现有的本机上传队列，不申请“辅助功能”或“完全磁盘访问”权限。来自 SD 卡等百度沙盒外位置的项目会临时复制到百度应用组缓存，并在确认上传成功后清理；失败缓存最多保留 7 天以便诊断。该队列属于百度私有本机协议，百度客户端未来升级后可能需要同步适配
 - Quick Look 支持范围取决于本机 macOS 与已安装应用；Windows 非图片文件目前回退类型图标
@@ -164,8 +165,14 @@ Quick Look 的覆盖范围仍取决于 macOS 版本与已安装预览生成器�
 
 ## 参与贡献
 
-欢迎提交 Issue 与 Pull Request。开始前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
+欢迎提交 Issue 与 Pull Request。`main` 始终代表稳定版；功能和修复从独立分支发起 PR，验证通过后再合并。开始前请阅读 [贡献指南](CONTRIBUTING.md)、[开发流程](docs/DEVELOPMENT_WORKFLOW.md) 和 [行为准则](CODE_OF_CONDUCT.md)。
+
+## 作者与官方项目身份
+
+EasyMove 由 **吴熳（Rosiawu）** 创作、设计并持续维护。官方源码、发布说明和安装包以 [@Rosiawu](https://github.com/Rosiawu) 名下的 EasyMove 仓库为准。完整作者声明见 [AUTHORS.md](AUTHORS.md) 与 [NOTICE](NOTICE)。
 
 ## 许可
 
-源代码以 [MIT License](LICENSE) 开源。三张主题底图由项目所有者提供并确认可随 EasyMove 重新分发，详情见 [assets/ASSET-LICENSE.md](assets/ASSET-LICENSE.md)。
+源代码以 [MIT License](LICENSE) 开源，版权所有人为 **吴熳（Rosiawu）**。MIT 允许使用、修改和再分发代码，但要求保留版权与许可声明。
+
+EasyMove 名称、Logo、应用图标和用于识别官方项目的品牌元素不因 MIT 许可而自动授权，详见 [TRADEMARKS.md](TRADEMARKS.md)。三张主题底图的再分发范围见 [assets/ASSET-LICENSE.md](assets/ASSET-LICENSE.md)。

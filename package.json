@@ -3,7 +3,11 @@
   "version": "0.6.19",
   "description": "A romantic multi-pane file manager for Windows and macOS.",
   "main": "src/main.js",
-  "author": "Rosiawu",
+  "author": {
+    "name": "吴熳",
+    "email": "woorosia@gmail.com",
+    "url": "https://github.com/Rosiawu"
+  },
   "license": "MIT",
   "private": false,
   "scripts": {
@@ -41,8 +45,11 @@
       "src/**/*",
       "assets/**/*",
       "!assets/theme-*.png",
+      "AUTHORS.md",
       "LICENSE",
+      "NOTICE",
       "README.md",
+      "TRADEMARKS.md",
       "package.json"
     ],
     "directories": {

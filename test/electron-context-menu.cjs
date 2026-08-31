@@ -266,7 +266,7 @@ async function main() {
       const style = getComputedStyle(element);
       return { text: element.textContent.trim(), fontSize: style.fontSize, fontWeight: style.fontWeight, height: element.getBoundingClientRect().height };
     })()`);
-    assert.deepEqual({ text: signature.text, fontSize: signature.fontSize, fontWeight: signature.fontWeight }, { text: 'Designed with care by Rosiawu', fontSize: '9px', fontWeight: '500' }, 'creator signature must remain elegant while clearly visible');
+    assert.deepEqual({ text: signature.text, fontSize: signature.fontSize, fontWeight: signature.fontWeight }, { text: 'Designed with care by 吴熳 · Rosiawu', fontSize: '9px', fontWeight: '500' }, 'creator signature must clearly name 吴熳 while remaining elegant');
     assert.ok(signature.height <= 12, 'creator signature must not increase the footer height');
 
     await client.evaluate(`Promise.all([
