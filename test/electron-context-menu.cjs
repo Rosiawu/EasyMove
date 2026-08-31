@@ -232,16 +232,29 @@ async function main() {
       .filter((button) => button.getAttribute('aria-keyshortcuts'))
       .map((button) => [button.dataset.command, {
         aria: button.getAttribute('aria-keyshortcuts'),
+        ariaLabel: button.getAttribute('aria-label'),
+        description: button.dataset.tooltipDescription,
+        shortcut: button.dataset.tooltipShortcut,
         title: button.title
       }]))`);
     assert.deepEqual(toolbarShortcuts, {
-      'new-folder': { aria: 'Meta+Shift+N', title: '新建文件夹（⌘⇧N）' },
-      copy: { aria: 'Meta+C', title: '复制（⌘C）' },
-      cut: { aria: 'Meta+X', title: '剪切（⌘X）' },
-      paste: { aria: 'Meta+V', title: '粘贴（⌘V）' },
-      rename: { aria: 'Enter', title: '重命名（Return）' },
-      trash: { aria: 'Backspace', title: '废纸篓（⌫）' }
+      'new-folder': { aria: 'Meta+Shift+N', ariaLabel: '新建文件夹：在当前窗格创建文件夹。快捷键 ⌘⇧N', description: '在当前窗格创建文件夹', shortcut: '快捷键  ⌘⇧N', title: '' },
+      copy: { aria: 'Meta+C', ariaLabel: '复制：复制所选项目。快捷键 ⌘C', description: '复制所选项目', shortcut: '快捷键  ⌘C', title: '' },
+      cut: { aria: 'Meta+X', ariaLabel: '剪切：剪切所选项目。快捷键 ⌘X', description: '剪切所选项目', shortcut: '快捷键  ⌘X', title: '' },
+      paste: { aria: 'Meta+V', ariaLabel: '粘贴：粘贴到当前窗格。快捷键 ⌘V', description: '粘贴到当前窗格', shortcut: '快捷键  ⌘V', title: '' },
+      rename: { aria: 'Enter', ariaLabel: '重命名：重命名所选项目。快捷键 Return', description: '重命名所选项目', shortcut: '快捷键  Return', title: '' },
+      trash: { aria: 'Backspace', ariaLabel: '废纸篓：将所选项目移到废纸篓。快捷键 ⌫', description: '将所选项目移到废纸篓', shortcut: '快捷键  ⌫', title: '' }
     });
+    const copyButtonCenter = await centerOf(client, '[data-command="copy"]');
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: copyButtonCenter.x, y: copyButtonCenter.y });
+    const visibleShortcutTooltip = await waitFor(() => client.evaluate(`(() => {
+      const button = document.querySelector('[data-command="copy"]');
+      const style = getComputedStyle(button, '::after');
+      return style.opacity === '1' ? { content: style.content, opacity: style.opacity } : null;
+    })()`), 'toolbar teaching tooltip became visible');
+    assert.equal(visibleShortcutTooltip.opacity, '1');
+    assert.match(visibleShortcutTooltip.content, /复制所选项目/);
+    assert.match(visibleShortcutTooltip.content, /⌘C/);
     const brandOffset = await client.evaluate(`(() => {
       const brand = document.querySelector('.brand');
       const matrix = new DOMMatrixReadOnly(getComputedStyle(brand).transform);

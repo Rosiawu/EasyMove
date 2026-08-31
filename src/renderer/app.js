@@ -2876,12 +2876,24 @@ document.addEventListener('keydown', (event) => {
 });
 
 function applyToolbarShortcutHints() {
+  const descriptions = {
+    'new-folder': '在当前窗格创建文件夹',
+    copy: '复制所选项目',
+    cut: '剪切所选项目',
+    paste: '粘贴到当前窗格',
+    rename: '重命名所选项目',
+    trash: state.platform === 'darwin' ? '将所选项目移到废纸篓' : '将所选项目移到回收站'
+  };
   document.querySelectorAll('.content-toolbar [data-command]').forEach((button) => {
     const command = button.dataset.command;
     const shortcut = contextMenuUtils.shortcutForCommand(command, state.platform);
     if (!shortcut) return;
     const label = button.querySelector('span')?.textContent?.trim() || command;
-    button.title = `${label}（${shortcut}）`;
+    const description = descriptions[command] || label;
+    button.removeAttribute('title');
+    button.dataset.tooltipDescription = description;
+    button.dataset.tooltipShortcut = `快捷键  ${shortcut}`;
+    button.setAttribute('aria-label', `${label}：${description}。快捷键 ${shortcut}`);
     button.setAttribute('aria-keyshortcuts', contextMenuUtils.ariaShortcutForCommand(command, state.platform));
   });
 }
