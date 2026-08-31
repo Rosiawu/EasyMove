@@ -47,13 +47,13 @@
     <header class="titlebar">
       <div class="brand">
         <span class="brand-mark"><span></span></span>
-        <span class="brand-name">EasyMove <small>0.3.2</small></span>
+        <span class="brand-name">EasyMove <small id="appVersion"></small></span>
         <svg class="brand-flower"><use href="#i-bloom"/></svg>
       </div>
 
       <label class="command-search">
         <svg><use href="#i-search"/></svg>
-        <input id="globalSearch" placeholder="搜索当前窗格，或输入路径…" autocomplete="off">
+        <input id="globalSearch" placeholder="搜索当前窗格，或粘贴路径直达…" autocomplete="off">
         <span class="shortcut">⌘ / Ctrl K</span>
       </label>
 
@@ -90,9 +90,9 @@
           <nav class="nav-list" id="volumeNav"></nav>
         </div>
         <div class="workspace-card">
-          <strong>四季工作区</strong>
-          <p>每个窗格都保留独立路径。切换布局不会丢失正在整理的位置。</p>
-          <button id="chooseFolderButton">打开其他文件夹</button>
+          <strong id="currentWorkspaceName">四季工作区</strong>
+          <p id="currentWorkspaceDetail">每个窗格都保留独立路径。切换布局不会丢失正在整理的位置。</p>
+          <div class="workspace-card-actions"><button id="saveWorkspaceButton">保存工作区</button><button id="chooseFolderButton">打开文件夹</button></div>
         </div>
       </aside>
 
@@ -115,6 +115,18 @@
         <div class="content-stage" id="contentStage">
           <div class="panes layout-2" id="panes"></div>
           <aside class="selection-preview" id="selectionPreview" aria-label="所选项目预览" hidden></aside>
+          <section class="photo-viewer" id="photoViewer" aria-label="照片预览" hidden>
+            <div class="photo-viewer-scrim" data-photo-close></div>
+            <div class="photo-viewer-panel" role="dialog" aria-modal="true" aria-labelledby="photoViewerName">
+              <header class="photo-viewer-header"><div><span>照片预览</span><strong id="photoViewerName"></strong></div><button data-photo-close title="关闭预览" aria-label="关闭预览"><svg><use href="#i-close"/></svg></button></header>
+              <div class="photo-viewer-body">
+                <button class="photo-viewer-arrow previous" data-photo-direction="ArrowLeft" title="上一张（← / ↑）" aria-label="上一张"><svg><use href="#i-back"/></svg></button>
+                <div class="photo-viewer-media" id="photoViewerMedia"></div>
+                <button class="photo-viewer-arrow next" data-photo-direction="ArrowRight" title="下一张（→ / ↓）" aria-label="下一张"><svg><use href="#i-next"/></svg></button>
+              </div>
+              <footer class="photo-viewer-footer"><span id="photoViewerCount"></span><span>↑ ↓ ← → 切换照片 · 空格或 Esc 关闭</span></footer>
+            </div>
+          </section>
         </div>
       </section>
     </section>
@@ -127,10 +139,21 @@
         <div class="transfer-meta" id="transferMeta">0%</div>
       </div>
       <div class="transfer-actions">
+        <span class="creator-signature">Designed with care by 吴熳 · Rosiawu</span>
         <button class="icon-button" id="pauseTransfer" title="暂停"><svg><use href="#i-pause"/></svg></button>
         <button class="icon-button" id="cancelTransfer" title="取消"><svg><use href="#i-close"/></svg></button>
       </div>
     </footer>
+
+    <section class="operation-history-panel" id="operationHistoryPanel" hidden aria-label="传输队列">
+      <div class="operation-history-header"><div><span>关闭应用后仍保留记录</span><strong>传输队列与最近操作</strong></div><button id="closeOperationHistory" aria-label="收起"><svg><use href="#i-close"/></svg></button></div>
+      <div class="operation-history-list" id="operationHistoryList"></div>
+    </section>
+
+    <section class="workspace-panel" id="workspacePanel" hidden aria-label="保存的工作区">
+      <div class="operation-history-header"><div><span>布局、路径、视图与排序</span><strong>保存的工作区</strong></div><button id="closeWorkspacePanel" aria-label="关闭"><svg><use href="#i-close"/></svg></button></div>
+      <div class="workspace-list" id="workspaceList"></div>
+    </section>
 
     <div class="toast" id="toast" role="status"><span class="toast-icon"><svg><use href="#i-check"/></svg></span><div><strong id="toastTitle">EasyMove</strong><p id="toastMessage"></p></div></div>
 
@@ -143,9 +166,59 @@
         <div class="dialog-actions"><button type="button" id="renameCancel">取消</button><button type="submit" class="confirm">确定</button></div>
       </form>
     </div>
+
+    <div class="modal-backdrop" id="batchRenameModal" hidden>
+      <form class="rename-dialog batch-rename-dialog" id="batchRenameForm">
+        <svg class="dialog-flower"><use href="#i-bloom"/></svg>
+        <h2 id="batchRenameTitle">批量重命名</h2>
+        <p>先预览全部结果，确认后两阶段改名；完成后可以撤销。</p>
+        <div class="batch-rule-grid">
+          <label for="batchRule">规则</label><select id="batchRule"><option value="prefix">添加前缀</option><option value="suffix">添加后缀</option><option value="replace">查找与替换</option><option value="number">添加编号</option><option value="date">添加日期</option></select>
+          <label for="batchValue" id="batchValueLabel">文字</label><input id="batchValue" value="第五课_" autocomplete="off">
+          <label for="batchReplacement" id="batchReplacementLabel">替换为</label><input id="batchReplacement" autocomplete="off" disabled>
+        </div>
+        <div class="batch-preview" id="batchPreview"></div>
+        <div class="batch-error" id="batchError" hidden></div>
+        <div class="dialog-actions"><button type="button" id="batchRenameCancel">取消</button><button type="submit" class="confirm" id="batchRenameConfirm">重命名</button></div>
+      </form>
+    </div>
+
+    <div class="modal-backdrop" id="workspaceModal" hidden>
+      <form class="rename-dialog" id="workspaceForm">
+        <svg class="dialog-flower"><use href="#i-bloom"/></svg>
+        <h2>保存当前工作区</h2>
+        <p>记录窗格布局、路径、视图、排序与隐藏文件状态。</p>
+        <input id="workspaceNameInput" autocomplete="off" placeholder="例如：视频播客整理">
+        <div class="dialog-actions"><button type="button" id="workspaceCancel">取消</button><button type="submit" class="confirm">保存</button></div>
+      </form>
+    </div>
+
+    <div class="modal-backdrop" id="indexModal" hidden>
+      <section class="rename-dialog index-dialog" role="dialog" aria-modal="true" aria-labelledby="indexTitle">
+        <svg class="dialog-flower"><use href="#i-bloom"/></svg>
+        <h2 id="indexTitle">本机内容索引</h2>
+        <p id="indexDescription">索引只保存在这台电脑上，不上传文件内容。</p>
+        <div class="index-summary"><strong id="indexStatusLabel">准备建立索引</strong><span id="indexStatusDetail">桌面、文稿、下载</span><div class="progress"><span id="indexProgressFill"></span></div></div>
+        <div class="index-root-list" id="indexRootList"></div>
+        <div class="index-privacy">文件名与元数据覆盖所有类型；正文覆盖文本、代码、Markdown、常见 Office 文档和 PDF。系统目录、Library、.git 与 node_modules 默认排除。</div>
+        <div class="dialog-actions index-actions"><button type="button" id="indexClear">清空</button><button type="button" id="indexRebuild">重建</button><button type="button" id="indexPause">暂停</button><button type="button" id="indexAddRoot">添加文件夹</button><button type="button" class="confirm" id="indexDone">完成</button></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="conflictModal" hidden>
+      <section class="rename-dialog conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflictTitle">
+        <svg class="dialog-flower"><use href="#i-bloom"/></svg>
+        <h2 id="conflictTitle">目标位置已有同名项目</h2>
+        <p id="conflictDescription">请选择如何处理这个项目。</p>
+        <div class="conflict-comparison" id="conflictComparison"></div>
+        <label class="conflict-apply-all"><input type="checkbox" id="conflictApplyAll"> 对后续冲突使用相同选择</label>
+        <div class="dialog-actions conflict-actions"><button type="button" data-conflict-action="cancel">取消</button><button type="button" data-conflict-action="skip">跳过</button><button type="button" data-conflict-action="keep-both">保留两者</button><button type="button" class="confirm" data-conflict-action="replace">替换</button></div>
+      </section>
+    </div>
   </main>
   <div class="hover-preview" id="hoverPreview" hidden></div>
   <script src="../sort-utils.js"></script>
+  <script src="../context-menu-utils.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
