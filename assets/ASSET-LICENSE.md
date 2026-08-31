@@ -8,5 +8,8 @@ be redistributed with the MIT-licensed EasyMove project.
 - `theme-iris.png`
 - `theme-lakeside.png`
 
+The corresponding `.webp` files are compressed derivatives used in release
+packages; the original PNG files remain in the source tree.
+
 This permission covers redistribution as part of EasyMove and its release
 packages. It does not assert ownership of unrelated third-party material.

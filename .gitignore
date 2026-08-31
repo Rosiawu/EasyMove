@@ -1,5 +1,46 @@
+# Dependencies and generated packages
 node_modules/
 dist/
+dist-*/
+*.dmg
+*.exe
+*.blockmap
+
+# Generated native helpers (built from native/ during packaging)
+assets/easymove-file-clipboard
+
+# Local design and task working material
+设计/
+work/
+outputs/
+.codex/
+memory/
+MEMORY.md
+
+# Signing, notarization, and local secrets
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.pfx
+*.pem
+*.key
+*.mobileprovision
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editors and logs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 *.log
+
+# Local icon source used during packaging
 build/icon-base.png

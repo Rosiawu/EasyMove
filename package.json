@@ -1,16 +1,19 @@
 {
   "name": "easymove",
-  "version": "0.3.2",
+  "version": "0.6.19",
   "description": "A romantic multi-pane file manager for Windows and macOS.",
   "main": "src/main.js",
-  "author": "EasyMove Contributors",
+  "author": "Rosiawu",
   "license": "MIT",
   "private": false,
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/app.js && node --check src/folder-size-service.js && node --check src/folder-size-worker.js && node --check src/thumbnail-service.js && node --check src/sort-utils.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/app.js && node --check src/folder-size-service.js && node --check src/folder-size-worker.js && node --check src/thumbnail-service.js && node --check src/sort-utils.js && node --check src/context-menu-utils.js && node --check src/native-context-menu.js && node --check src/operation-history.js && node --check src/recent-items.js && node --check src/persistent-collections.js && node --check src/content-index-utils.js && node --check src/content-index-service.js && node --check src/content-index-worker.js && node --check src/file-actions.js && node --check src/file-clipboard.js && node --check src/transfer-journal.js && node --check src/verified-copy.js && node --check src/volume-utils.js && node --check src/finder-info.js && node --check src/baidu-netdisk.js",
     "test": "node --test test/*.test.js",
-    "dist:mac": "electron-builder --mac dmg --arm64",
+    "test:electron": "node test/electron-context-menu.cjs",
+    "test:electron:v060": "node test/electron-v060.cjs",
+    "build:native": "node scripts/build-native.cjs",
+    "dist:mac": "npm run build:native && electron-builder --mac dmg --arm64",
     "dist:win": "electron-builder --win nsis --x64",
     "dist:win-portable": "electron-builder --win portable --x64"
   },
@@ -23,12 +26,21 @@
     "productName": "EasyMove",
     "artifactName": "EasyMove-${version}-${os}-${arch}.${ext}",
     "asar": true,
+    "compression": "maximum",
+    "electronLanguages": [
+      "zh_CN",
+      "en"
+    ],
     "asarUnpack": [
-      "src/folder-size-worker.js"
+      "src/folder-size-worker.js",
+      "src/content-index-worker.js",
+      "src/content-index-utils.js",
+      "assets/easymove-file-clipboard"
     ],
     "files": [
       "src/**/*",
       "assets/**/*",
+      "!assets/theme-*.png",
       "LICENSE",
       "README.md",
       "package.json"
@@ -36,6 +48,7 @@
     "directories": {
       "output": "dist"
     },
+    "afterPack": "scripts/after-pack.cjs",
     "mac": {
       "target": [
         {
@@ -49,10 +62,14 @@
       "icon": "build/icon.png",
       "identity": null,
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "EasyMove 仅在你选择“显示简介”时，请求 Finder 打开所选项目的系统简介窗口。"
+      }
     },
     "dmg": {
       "title": "EasyMove ${version}",
+      "format": "UDBZ",
       "backgroundColor": "#f5f1eb",
       "window": {
         "width": 600,
